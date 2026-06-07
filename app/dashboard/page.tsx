@@ -155,7 +155,7 @@ export default function DashboardPage() {
   const [input, setInput] = useState("");
   const [medidas, setMedidas] = useState<Medidas>({ busto: "", cintura: "", quadril: "", altura: "" });
   const [showMedidas, setShowMedidas] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [imageBase64, setImageBase64] = useState("");
   const [isLoading, setIsLoading] = useState(false);
