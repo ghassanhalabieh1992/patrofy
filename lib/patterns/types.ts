@@ -1,12 +1,28 @@
 // Core types for the parametric pattern engine (all units in cm)
 
 export interface Measurements {
-  cintura: number       // waist circumference
-  quadril: number       // hip circumference
-  busto?: number        // bust circumference
-  comprimento: number   // garment length
-  altura?: number       // total body height
-  mangas?: number       // sleeve length
+  // ── Medidas básicas (obrigatórias por peça) ──────────────────────
+  cintura:     number        // circunferência da cintura
+  quadril:     number        // circunferência do quadril
+  comprimento: number        // comprimento da peça (ombro → bainha)
+
+  // ── Medidas corporais principais ─────────────────────────────────
+  busto?:      number        // circunferência do busto / peitoral
+  altura?:     number        // altura total do corpo
+  mangas?:     number        // comprimento da manga (ombro → punho)
+
+  // ── Medidas corporais complementares ─────────────────────────────
+  ombros?:        number     // largura dos ombros (ombro a ombro)
+  pescoco?:       number     // circunferência do pescoço
+  dorsoCostas?:   number     // largura das costas (cava a cava)
+  profCava?:      number     // profundidade da cava
+  punho?:         number     // circunferência do punho
+  bracoCirc?:     number     // circunferência do braço (bíceps)
+  entrepernas?:   number     // comprimento interno da perna (entrerilha → tornozelo)
+  cava?:          number     // circunferência da cava
+  coxa?:          number     // circunferência da coxa
+  joelho?:        number     // circunferência do joelho
+  tornozelo?:     number     // circunferência do tornozelo
 }
 
 // 2D point

@@ -12,42 +12,59 @@ import {
   detectGarment,
   GARMENT_LABELS,
   REQUIRED_FIELDS,
+  OPTIONAL_FIELDS,
   FIELD_LABELS,
   type GarmentType,
   type PatternData,
   type Measurements,
 } from "@/lib/patterns";
 
-// ── Extract numeric measurements from free text (Arabic/Portuguese/English) ───
+// ── Extract numeric measurements from free text ───────────────────────────────
 function extractMeasurementsFromText(text: string): Partial<Measurements> {
-  const t = text;
-  const num = (regex: RegExp) => { const m = t.match(regex); return m ? parseFloat(m[1].replace(',', '.')) : undefined; };
+  const num = (r: RegExp) => { const m = text.match(r); return m ? parseFloat(m[1].replace(',', '.')) : undefined; };
   return {
-    cintura:     num(/(?:cintura|waist|خصر)[:\s]+(\d+(?:[.,]\d+)?)/i),
-    quadril:     num(/(?:quadril|hip|ورك)[:\s]+(\d+(?:[.,]\d+)?)/i),
-    busto:       num(/(?:busto|bust|صدر)[:\s]+(\d+(?:[.,]\d+)?)/i),
-    comprimento: num(/(?:comprimento|length|طول)[:\s]+(\d+(?:[.,]\d+)?)/i),
-    altura:      num(/(?:altura|height|ارتفاع)[:\s]+(\d+(?:[.,]\d+)?)/i),
-    mangas:      num(/(?:manga|sleeve)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    cintura:      num(/(?:cintura|waist|خصر)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    quadril:      num(/(?:quadril|hip|ورك|ارداف)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    busto:        num(/(?:busto|bust|peitoral|peito|صدر)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    comprimento:  num(/(?:comprimento|length|طول)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    altura:       num(/(?:altura|height|ارتفاع|طول القامة)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    mangas:       num(/(?:manga[s]?|sleeve|طول الكم)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    ombros:       num(/(?:ombro[s]?|shoulder|عرض الكتف)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    pescoco:      num(/(?:pescoço|pesco[çc]o|neck|الرقبة|محيط الرقبة)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    dorsoCostas:  num(/(?:costas|dorso|back width|عرض الظهر)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    profCava:     num(/(?:cava|armhole depth|عمق فتحة الكم)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    punho:        num(/(?:punho|wrist|محيط المعصم)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    bracoCirc:    num(/(?:bra[çc]o|arm circ|محيط العضد)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    entrepernas:  num(/(?:entrep|inseam|الطول الداخلي)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    coxa:         num(/(?:coxa|thigh|محيط الفخذ)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    joelho:       num(/(?:joelho|knee|محيط الركبة)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    tornozelo:    num(/(?:tornozelo|ankle|محيط الكاحل)[:\s]+(\d+(?:[.,]\d+)?)/i),
   };
 }
 
-// ── Auto-generate visual pattern from AI Ficha Técnica + user text ─────────────
+// ── Auto-generate pattern from AI Ficha Técnica + user text ──────────────────
 function fichaToPattern(ficha: FichaTecnicaData, userText: string): PatternData | null {
   const garment = detectGarment(ficha.peca ?? userText);
   if (!garment) return null;
-  // Prefer user-provided text measurements, fallback to size M from Ficha
-  const textM = extractMeasurementsFromText(userText);
+  const textM    = extractMeasurementsFromText(userText);
   const sizeData = ficha.medidas_tabela?.["M"] ?? ficha.medidas_tabela?.["G"] ?? {};
-  const comprPart = ficha.partes?.reduce((max, p) =>
-    Math.max(max, p.medidas?.comprimento_cm ?? 0), 0) ?? 0;
+  const comprPart = ficha.partes?.reduce((max, p) => Math.max(max, p.medidas?.comprimento_cm ?? 0), 0) ?? 0;
   const m: Measurements = {
     cintura:     textM.cintura     ?? sizeData.cintura     ?? 0,
     quadril:     textM.quadril     ?? sizeData.quadril     ?? 0,
-    busto:       textM.busto       ?? sizeData.busto       ?? undefined,
+    busto:       textM.busto       ?? sizeData.busto,
     comprimento: textM.comprimento ?? sizeData.comprimento ?? (comprPart > 0 ? comprPart : 0),
     altura:      textM.altura,
     mangas:      textM.mangas,
+    ombros:      textM.ombros,
+    pescoco:     textM.pescoco,
+    dorsoCostas: textM.dorsoCostas,
+    punho:       textM.punho,
+    bracoCirc:   textM.bracoCirc,
+    entrepernas: textM.entrepernas,
+    coxa:        textM.coxa,
+    joelho:      textM.joelho,
+    tornozelo:   textM.tornozelo,
   };
   const required = REQUIRED_FIELDS[garment];
   if (required.some(f => !m[f])) return null;
@@ -265,10 +282,19 @@ export default function DashboardPage() {
         const m: Measurements = {
           cintura:     textM.cintura     ?? 0,
           quadril:     textM.quadril     ?? 0,
-          busto:       textM.busto       ?? undefined,
+          busto:       textM.busto,
           comprimento: textM.comprimento ?? 0,
           altura:      textM.altura,
           mangas:      textM.mangas,
+          ombros:      textM.ombros,
+          pescoco:     textM.pescoco,
+          dorsoCostas: textM.dorsoCostas,
+          punho:       textM.punho,
+          bracoCirc:   textM.bracoCirc,
+          entrepernas: textM.entrepernas,
+          coxa:        textM.coxa,
+          joelho:      textM.joelho,
+          tornozelo:   textM.tornozelo,
         };
         const required = REQUIRED_FIELDS[directGarment];
         if (required.every(f => m[f])) {
@@ -370,13 +396,24 @@ export default function DashboardPage() {
     const required = REQUIRED_FIELDS[patternGarment];
     if (required.some((f) => !patternMeasures[f])) return;
 
+    const p = (k: string) => parseFloat(patternMeasures[k] ?? "0") || undefined;
     const measures: Measurements = {
       cintura:     parseFloat(patternMeasures.cintura     ?? "0"),
       quadril:     parseFloat(patternMeasures.quadril     ?? "0"),
-      busto:       parseFloat(patternMeasures.busto       ?? "0") || undefined,
       comprimento: parseFloat(patternMeasures.comprimento ?? "0"),
-      altura:      parseFloat(patternMeasures.altura      ?? "0") || undefined,
-      mangas:      parseFloat(patternMeasures.mangas      ?? "0") || undefined,
+      busto:       p('busto'),
+      altura:      p('altura'),
+      mangas:      p('mangas'),
+      ombros:      p('ombros'),
+      pescoco:     p('pescoco'),
+      dorsoCostas: p('dorsoCostas'),
+      profCava:    p('profCava'),
+      punho:       p('punho'),
+      bracoCirc:   p('bracoCirc'),
+      entrepernas: p('entrepernas'),
+      coxa:        p('coxa'),
+      joelho:      p('joelho'),
+      tornozelo:   p('tornozelo'),
     };
 
     const pattern = generatePattern(patternGarment, measures);
@@ -604,29 +641,55 @@ export default function DashboardPage() {
                 <span className="text-sm font-semibold text-white">Gerar Molde Paramétrico</span>
                 <button onClick={() => setShowPatternPanel(false)} className="text-slate-400 hover:text-white text-xl">×</button>
               </div>
-              <div className="flex gap-2">
-                {(["saia", "calca", "blusa"] as GarmentType[]).map((g) => (
+
+              {/* Garment selector */}
+              <div className="flex flex-wrap gap-2">
+                {(["saia", "calca", "blusa", "blazer-fem", "blazer-masc"] as GarmentType[]).map((g) => (
                   <button key={g} onClick={() => { setPatternGarment(g); setPatternMeasures({}); }}
-                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${patternGarment === g ? "bg-purple-600 text-white" : "bg-white/10 text-slate-300 hover:bg-white/15"}`}>
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${patternGarment === g ? "bg-purple-600 text-white" : "bg-white/10 text-slate-300 hover:bg-white/15"}`}>
                     {GARMENT_LABELS[g]}
                   </button>
                 ))}
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {REQUIRED_FIELDS[patternGarment].map((field) => (
-                  <div key={field} className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">{FIELD_LABELS[field] ?? field} <span className="text-purple-400">*</span></label>
-                    <div className="relative">
-                      <input
-                        type="number" placeholder="0" value={patternMeasures[field] ?? ""}
-                        onChange={(e) => setPatternMeasures((prev) => ({ ...prev, [field]: e.target.value }))}
-                        className="w-full bg-slate-800 border border-white/15 rounded-xl px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-400 pr-9"
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">cm</span>
+
+              {/* Required fields */}
+              <div>
+                <p className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-2">Medidas obrigatórias</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {REQUIRED_FIELDS[patternGarment].map((field) => (
+                    <div key={field} className="flex flex-col gap-1">
+                      <label className="text-xs text-slate-400">{FIELD_LABELS[field] ?? field} <span className="text-purple-400">*</span></label>
+                      <div className="relative">
+                        <input type="number" placeholder="0" value={patternMeasures[field] ?? ""}
+                          onChange={(e) => setPatternMeasures((prev) => ({ ...prev, [field]: e.target.value }))}
+                          className="w-full bg-slate-800 border border-white/15 rounded-xl px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-400 pr-9"/>
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">cm</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
+
+              {/* Optional fields */}
+              {OPTIONAL_FIELDS[patternGarment].length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Medidas complementares (opcional)</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {OPTIONAL_FIELDS[patternGarment].map((field) => (
+                      <div key={field} className="flex flex-col gap-1">
+                        <label className="text-xs text-slate-500">{FIELD_LABELS[field] ?? field}</label>
+                        <div className="relative">
+                          <input type="number" placeholder="—" value={patternMeasures[field] ?? ""}
+                            onChange={(e) => setPatternMeasures((prev) => ({ ...prev, [field]: e.target.value }))}
+                            className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-slate-700 focus:outline-none focus:border-purple-400/50 pr-9"/>
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-600">cm</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {(() => {
                 const missing = REQUIRED_FIELDS[patternGarment].filter((f) => !patternMeasures[f]);
                 return (
