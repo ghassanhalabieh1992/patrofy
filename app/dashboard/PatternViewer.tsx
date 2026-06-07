@@ -316,23 +316,101 @@ async function printPatternPDF(pattern: PatternData) {
   doc.save(`patrofy-${pattern.garment.replace(/\s/g, '-')}-${pattern.sizeName}.pdf`);
 }
 
+// ── SVG Export ────────────────────────────────────────────────────────────────
+function downloadPatternSVG(pattern: PatternData) {
+  const PX = 37.795; // 1cm = 37.795px at 96dpi
+  const GAP = 50;
+  let totalW = GAP;
+  const offsets: number[] = [];
+  let maxH = 0;
+  for (const piece of pattern.pieces) {
+    offsets.push(totalW);
+    totalW += piece.bbox.w * PX + GAP;
+    maxH = Math.max(maxH, piece.bbox.h * PX);
+  }
+  const totalH = maxH + GAP * 2 + 40;
+
+  let bodies = '';
+  for (let i = 0; i < pattern.pieces.length; i++) {
+    const p = pattern.pieces[i];
+    const ox = offsets[i]; const oy = GAP;
+    const cutD  = pathToSVG(p.cutPath,  PX);
+    const seamD = pathToSVG(p.seamPath, PX);
+    bodies += `<g transform="translate(${ox},${oy})" id="${p.id}">
+  <path d="${cutD}"  fill="#fff5f5" stroke="#dc2626" stroke-width="0.8" stroke-dasharray="6,3"/>
+  <path d="${seamD}" fill="none"    stroke="#1e3a5f" stroke-width="0.5"/>
+  <line x1="${p.grainLine[0].x*PX}" y1="${p.grainLine[0].y*PX}" x2="${p.grainLine[1].x*PX}" y2="${p.grainLine[1].y*PX}" stroke="#6b7280" stroke-width="0.5"/>
+  <text x="${p.bbox.w/2*PX}" y="${p.bbox.h/2*PX}" font-size="14" fill="#374151" text-anchor="middle" opacity="0.5">${p.name}</text>
+  <text x="${p.bbox.w/2*PX}" y="${p.bbox.h*PX+16}" font-size="10" fill="#6b7280" text-anchor="middle">${p.bbox.w.toFixed(1)}×${p.bbox.h.toFixed(1)} cm · ${p.cutInfo}</text>
+</g>\n`;
+  }
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">
+  <title>Patrofy — ${pattern.garment} ${pattern.sizeName}</title>
+  <defs><pattern id="g" width="${PX}" height="${PX}" patternUnits="userSpaceOnUse">
+    <path d="M ${PX} 0 L 0 0 0 ${PX}" fill="none" stroke="#e5e7eb" stroke-width="0.2"/>
+  </pattern></defs>
+  <rect width="${totalW}" height="${totalH}" fill="white"/>
+  <rect width="${totalW}" height="${totalH}" fill="url(#g)"/>
+  ${bodies}
+  <g transform="translate(${GAP},${totalH-20})">
+    <line x1="0" y1="0" x2="${10*PX}" y2="0" stroke="black" stroke-width="0.5"/>
+    <line x1="0" y1="-4" x2="0" y2="4" stroke="black" stroke-width="0.5"/>
+    <line x1="${10*PX}" y1="-4" x2="${10*PX}" y2="4" stroke="black" stroke-width="0.5"/>
+    <text x="${5*PX}" y="12" font-size="10" text-anchor="middle">10 cm</text>
+  </g>
+</svg>`;
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  a.download = `patrofy-${pattern.garment.replace(/\s/g,'-')}-${pattern.sizeName}.svg`;
+  a.click();
+}
+
+// ── DXF Export (compatible with cutting machines) ─────────────────────────────
+function downloadPatternDXF(pattern: PatternData) {
+  let dxf = '0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n';
+  let offsetX = 0;
+  for (const piece of pattern.pieces) {
+    const pts: string[] = [];
+    for (const cmd of piece.cutPath) {
+      if (cmd.t === 'Z') continue;
+      if (cmd.t === 'M' || cmd.t === 'L')
+        pts.push(`10\n${((cmd.x + offsetX)*10).toFixed(3)}\n20\n${(cmd.y*10).toFixed(3)}\n30\n0.0`);
+    }
+    dxf += `0\nLWPOLYLINE\n8\nCUT\n70\n1\n90\n${pts.length}\n${pts.join('\n')}\n`;
+
+    const seamPts: string[] = [];
+    for (const cmd of piece.seamPath) {
+      if (cmd.t === 'Z') continue;
+      if (cmd.t === 'M' || cmd.t === 'L')
+        seamPts.push(`10\n${((cmd.x + offsetX)*10).toFixed(3)}\n20\n${(cmd.y*10).toFixed(3)}\n30\n0.0`);
+    }
+    dxf += `0\nLWPOLYLINE\n8\nSEAM\n70\n1\n90\n${seamPts.length}\n${seamPts.join('\n')}\n`;
+    offsetX += piece.bbox.w + 5;
+  }
+  dxf += '0\nENDSEC\n0\nEOF';
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([dxf], { type: 'application/dxf' }));
+  a.download = `patrofy-${pattern.garment.replace(/\s/g,'-')}-${pattern.sizeName}.dxf`;
+  a.click();
+}
+
 // ── Main PatternViewer Component ──────────────────────────────────────────────
 export function PatternViewer({ pattern }: { pattern: PatternData }) {
   const [selectedPiece, setSelectedPiece] = useState<string>(pattern.pieces[0]?.id ?? '');
   const [printing, setPrinting] = useState(false);
+  const [showExport, setShowExport] = useState(false);
 
   const handlePrint = useCallback(async () => {
     setPrinting(true);
-    try {
-      await printPatternPDF(pattern);
-    } finally {
-      setPrinting(false);
-    }
+    try { await printPatternPDF(pattern); } finally { setPrinting(false); }
   }, [pattern]);
 
   const currentPiece = pattern.pieces.find(p => p.id === selectedPiece) ?? pattern.pieces[0];
 
-  // Calculate total A4 pages needed
   const totalPages = pattern.pieces.reduce((sum, p) => {
     const cols = Math.ceil((p.bbox.w * 10) / (A4_W_MM - OVERLAP_CM * 10));
     const rows = Math.ceil((p.bbox.h * 10) / (A4_H_MM - OVERLAP_CM * 10));
@@ -348,21 +426,45 @@ export function PatternViewer({ pattern }: { pattern: PatternData }) {
           <p className="font-semibold text-sm">{pattern.garment}</p>
           <p className="text-xs text-indigo-300">{pattern.sizeName} — margem de costura: {pattern.seamAllowance}cm · bainha: {pattern.hemAllowance}cm</p>
         </div>
-        <button
-          onClick={handlePrint}
-          disabled={printing}
-          className="flex items-center gap-2 bg-white text-indigo-900 hover:bg-indigo-50 disabled:opacity-50 text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
-        >
-          {printing ? (
-            <span className="w-4 h-4 border-2 border-indigo-300 border-t-indigo-900 rounded-full animate-spin" />
-          ) : (
-            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
-              <rect x="6" y="14" width="12" height="8"/>
-            </svg>
-          )}
-          Imprimir A4 ({totalPages} {totalPages === 1 ? 'página' : 'páginas'})
-        </button>
+        <div className="flex items-center gap-2 relative">
+          {/* PDF button */}
+          <button
+            onClick={handlePrint}
+            disabled={printing}
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white text-xs font-medium px-3 py-2 rounded-xl transition-colors"
+          >
+            {printing ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : '↓'}
+            PDF ({totalPages}p)
+          </button>
+          {/* Export dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExport(v => !v)}
+              className="flex items-center gap-1.5 bg-white text-indigo-900 hover:bg-indigo-50 text-xs font-semibold px-3 py-2 rounded-xl transition-colors"
+            >
+              Exportar ▾
+            </button>
+            {showExport && (
+              <div className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-slate-200 w-48 z-50 overflow-hidden">
+                <button onClick={() => { downloadPatternSVG(pattern); setShowExport(false); }}
+                  className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3">
+                  <span className="text-lg">🎨</span>
+                  <div><p className="font-medium">SVG</p><p className="text-xs text-slate-400">Illustrator / Inkscape</p></div>
+                </button>
+                <button onClick={() => { downloadPatternDXF(pattern); setShowExport(false); }}
+                  className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-100">
+                  <span className="text-lg">✂️</span>
+                  <div><p className="font-medium">DXF</p><p className="text-xs text-slate-400">Máquinas de corte / CAD</p></div>
+                </button>
+                <button onClick={() => { handlePrint(); setShowExport(false); }}
+                  className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-100">
+                  <span className="text-lg">🖨️</span>
+                  <div><p className="font-medium">PDF A4</p><p className="text-xs text-slate-400">Imprimir e cortar</p></div>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Piece tabs */}

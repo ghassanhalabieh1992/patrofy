@@ -53,10 +53,10 @@ Sempre retornar JSON válido (sem markdown, sem texto fora do JSON):
   "tecido_recomendado": "ex: malha de algodão 200g/m²",
   "tamanho_base": "M",
   "medidas_tabela": {
-    "P":  { "cintura": 0, "quadril": 0, "busto": 0 },
-    "M":  { "cintura": 0, "quadril": 0, "busto": 0 },
-    "G":  { "cintura": 0, "quadril": 0, "busto": 0 },
-    "GG": { "cintura": 0, "quadril": 0, "busto": 0 }
+    "P":  { "cintura": 0, "quadril": 0, "busto": 0, "comprimento": 0 },
+    "M":  { "cintura": 0, "quadril": 0, "busto": 0, "comprimento": 0 },
+    "G":  { "cintura": 0, "quadril": 0, "busto": 0, "comprimento": 0 },
+    "GG": { "cintura": 0, "quadril": 0, "busto": 0, "comprimento": 0 }
   },
   "margem_costura": "1,5 cm",
   "partes": [

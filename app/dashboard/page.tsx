@@ -9,6 +9,7 @@ import { PatternViewer } from "./PatternViewer";
 import { FichaTecnica, type FichaTecnicaData } from "./FichaTecnica";
 import {
   generatePattern,
+  detectGarment,
   GARMENT_LABELS,
   REQUIRED_FIELDS,
   FIELD_LABELS,
@@ -16,6 +17,42 @@ import {
   type PatternData,
   type Measurements,
 } from "@/lib/patterns";
+
+// ── Extract numeric measurements from free text (Arabic/Portuguese/English) ───
+function extractMeasurementsFromText(text: string): Partial<Measurements> {
+  const t = text;
+  const num = (regex: RegExp) => { const m = t.match(regex); return m ? parseFloat(m[1].replace(',', '.')) : undefined; };
+  return {
+    cintura:     num(/(?:cintura|waist|خصر)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    quadril:     num(/(?:quadril|hip|ورك)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    busto:       num(/(?:busto|bust|صدر)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    comprimento: num(/(?:comprimento|length|طول)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    altura:      num(/(?:altura|height|ارتفاع)[:\s]+(\d+(?:[.,]\d+)?)/i),
+    mangas:      num(/(?:manga|sleeve)[:\s]+(\d+(?:[.,]\d+)?)/i),
+  };
+}
+
+// ── Auto-generate visual pattern from AI Ficha Técnica + user text ─────────────
+function fichaToPattern(ficha: FichaTecnicaData, userText: string): PatternData | null {
+  const garment = detectGarment(ficha.peca ?? userText);
+  if (!garment) return null;
+  // Prefer user-provided text measurements, fallback to size M from Ficha
+  const textM = extractMeasurementsFromText(userText);
+  const sizeData = ficha.medidas_tabela?.["M"] ?? ficha.medidas_tabela?.["G"] ?? {};
+  const comprPart = ficha.partes?.reduce((max, p) =>
+    Math.max(max, p.medidas?.comprimento_cm ?? 0), 0) ?? 0;
+  const m: Measurements = {
+    cintura:     textM.cintura     ?? sizeData.cintura     ?? 0,
+    quadril:     textM.quadril     ?? sizeData.quadril     ?? 0,
+    busto:       textM.busto       ?? sizeData.busto       ?? undefined,
+    comprimento: textM.comprimento ?? sizeData.comprimento ?? (comprPart > 0 ? comprPart : 0),
+    altura:      textM.altura,
+    mangas:      textM.mangas,
+  };
+  const required = REQUIRED_FIELDS[garment];
+  if (required.some(f => !m[f])) return null;
+  try { return generatePattern(garment, m); } catch { return null; }
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -74,10 +111,13 @@ const WELCOME: ChatMessage = {
   role: "assistant",
   content: `Olá! Sou o **Patrofy AI**, seu assistente de modelagem de roupas.
 
-Posso ajudar você a:
-• **Gerar moldes** a partir de descrições textuais
-• **Analisar imagens** de peças e extrair o molde
-• **Gerar moldes paramétricos** com formas reais para impressão e corte
+Descreva a peça que deseja em texto livre — com as medidas — e gerei o molde completo automaticamente. Exemplos:
+
+• **"Saia reta cintura 72 quadril 98 comprimento 65"**
+• **"Blusa básica busto 92 cintura 76 comprimento 58"**
+• **"Calça básica cintura 74 quadril 100 comprimento 100"**
+
+Também posso analisar imagens de peças e gerar o molde a partir delas.
 • **Exportar em PDF** em escala 1:1 para costura profissional
 
 Como posso começar?`,
@@ -217,6 +257,43 @@ export default function DashboardPage() {
     setShowMedidas(false);
     setIsLoading(true);
 
+    // ── Fast path: if user provided garment + measurements directly, skip AI ──
+    if (!isImage) {
+      const directGarment = detectGarment(userContent);
+      if (directGarment) {
+        const textM = extractMeasurementsFromText(userContent);
+        const m: Measurements = {
+          cintura:     textM.cintura     ?? 0,
+          quadril:     textM.quadril     ?? 0,
+          busto:       textM.busto       ?? undefined,
+          comprimento: textM.comprimento ?? 0,
+          altura:      textM.altura,
+          mangas:      textM.mangas,
+        };
+        const required = REQUIRED_FIELDS[directGarment];
+        if (required.every(f => m[f])) {
+          try {
+            const pattern = generatePattern(directGarment, m);
+            const label = GARMENT_LABELS[directGarment];
+            const assistantMsg: ChatMessage = {
+              id:      "pa-" + Date.now(),
+              role:    "assistant",
+              content: `Molde paramétrico gerado: **${label}** (${pattern.sizeName}).\n\nExporte em PDF, SVG ou DXF com o botão **Exportar**.`,
+              pattern,
+            };
+            setMessages(prev => prev.map(m => m.id === "loading" ? assistantMsg : m));
+            setIsLoading(false);
+            fetch("/api/moldes/gerar", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ descricao: userContent, pattern_data: pattern }),
+            }).then(() => loadHistory());
+            return;
+          } catch { /* fall through to AI path */ }
+        }
+      }
+    }
+
     // Build conversation history (last 6 turns for context)
     const historico = messages
       .filter((m) => !m.isLoading && m.id !== "welcome" && !m.pattern)
@@ -240,6 +317,7 @@ export default function DashboardPage() {
 
       const rawResultado: string = data.molde.resultado ?? "";
       const fichaJSON = extractJSON(rawResultado) as FichaTecnicaData | null;
+      const autoPattern = fichaJSON ? fichaToPattern(fichaJSON, userContent) : null;
       const assistantId = "a-" + Date.now();
 
       setMessages((prev) =>
@@ -248,9 +326,12 @@ export default function DashboardPage() {
             ? {
                 id:      assistantId,
                 role:    "assistant",
-                content: fichaJSON ? (fichaJSON.peca ? `Ficha técnica gerada para **${fichaJSON.peca}**.` : "Molde gerado com sucesso.") : rawResultado,
-                medidas: hasMedidas ? { ...medidas } : undefined,
-                ficha:   fichaJSON ?? undefined,
+                content: fichaJSON
+                  ? (fichaJSON.peca ? `Ficha técnica gerada para **${fichaJSON.peca}**.` : "Molde gerado com sucesso.")
+                  : rawResultado,
+                medidas:  hasMedidas ? { ...medidas } : undefined,
+                ficha:    fichaJSON ?? undefined,
+                pattern:  autoPattern ?? undefined,
               }
             : m
         )
@@ -339,9 +420,7 @@ export default function DashboardPage() {
       {/* ── Sidebar ──────────────────────────────────────────────────── */}
       <aside className={`${sidebarOpen ? "w-64" : "w-0"} flex-shrink-0 transition-all duration-200 overflow-hidden bg-slate-900 border-r border-white/10 flex flex-col`}>
         <div className="p-4 border-b border-white/10">
-          <span className="text-xl font-bold tracking-tight block mb-3">
-            Patrofy<span className="text-purple-400">.</span>
-          </span>
+          <span className="text-xl font-bold tracking-tight block mb-3">Patrofy</span>
           <button
             onClick={newChat}
             className="w-full flex items-center gap-2 text-sm bg-purple-600 hover:bg-purple-500 transition-colors px-3 py-2 rounded-xl font-medium"
@@ -450,11 +529,11 @@ export default function DashboardPage() {
                     </div>
                   )}
 
-                  {/* Parametric pattern viewer */}
+                  {/* Parametric pattern viewer — always shown first */}
                   {msg.pattern && <PatternViewer pattern={msg.pattern} />}
 
-                  {/* Structured AI ficha técnica */}
-                  {msg.ficha && <FichaTecnica data={msg.ficha} descricao={msg.id ? messages.find(m => m.id === "u-" + msg.id.slice(2))?.content : undefined} />}
+                  {/* Structured AI ficha técnica — detail card */}
+                  {msg.ficha && !msg.pattern && <FichaTecnica data={msg.ficha} descricao={msg.id ? messages.find(m => m.id === "u-" + msg.id.slice(2))?.content : undefined} />}
 
                   {/* Action buttons — only for plain text responses */}
                   {msg.role === "assistant" && !msg.isLoading && msg.id !== "welcome" && !msg.pattern && !msg.ficha && (
