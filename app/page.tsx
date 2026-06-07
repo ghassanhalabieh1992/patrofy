@@ -1,65 +1,76 @@
-import Image from "next/image";
+import Link from "next/link";
 
-export default function Home() {
+export default function LandingPage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-slate-900 text-white flex flex-col">
+      {/* Navbar */}
+      <nav className="flex items-center justify-between px-8 py-5 border-b border-white/10">
+        <span className="text-2xl font-bold tracking-tight">
+          Patrofy<span className="text-purple-400">.</span>
+        </span>
+        <Link
+          href="/login"
+          className="text-sm font-medium bg-purple-600 hover:bg-purple-500 transition-colors px-5 py-2 rounded-full"
+        >
+          Entrar
+        </Link>
+      </nav>
+
+      {/* Hero */}
+      <section className="flex-1 flex flex-col items-center justify-center text-center px-6 py-20">
+        <span className="inline-block text-xs font-semibold uppercase tracking-widest bg-purple-500/20 text-purple-300 border border-purple-500/30 px-4 py-1 rounded-full mb-6">
+          IA para Costura Profissional
+        </span>
+        <h1 className="text-5xl md:text-6xl font-extrabold leading-tight max-w-3xl">
+          Moldes profissionais gerados por{" "}
+          <span className="text-purple-400">IA em segundos.</span>
+        </h1>
+        <p className="mt-6 text-lg text-slate-300 max-w-xl">
+          Descreva a peça que deseja e receba instruções técnicas completas —
+          medidas, formato, marcações e orientações de corte.
+        </p>
+        <Link
+          href="/login"
+          className="mt-10 inline-block bg-purple-600 hover:bg-purple-500 active:scale-95 transition-all text-white font-semibold text-lg px-10 py-4 rounded-full shadow-lg shadow-purple-900/50"
+        >
+          Começar agora →
+        </Link>
+      </section>
+
+      {/* Benefícios */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6 px-8 pb-20 max-w-5xl mx-auto w-full">
+        {[
+          {
+            icon: "⚡",
+            titulo: "Rapidez",
+            desc: "Moldes detalhados em segundos, sem esperar pelo próximo atendimento.",
+          },
+          {
+            icon: "📐",
+            titulo: "Precisão técnica",
+            desc: "Instruções profissionais com medidas, marcações e orientações de corte.",
+          },
+          {
+            icon: "🔄",
+            titulo: "Histórico completo",
+            desc: "Todos os seus moldes salvos e acessíveis a qualquer momento.",
+          },
+        ].map((item) => (
+          <div
+            key={item.titulo}
+            className="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col gap-3 hover:bg-white/10 transition-colors"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            <span className="text-3xl">{item.icon}</span>
+            <h3 className="text-lg font-semibold">{item.titulo}</h3>
+            <p className="text-slate-400 text-sm">{item.desc}</p>
+          </div>
+        ))}
+      </section>
+
+      {/* Rodapé */}
+      <footer className="text-center text-xs text-slate-600 pb-6">
+        © 2024 Patrofy — Powered by LLaMA 3 (Meta) via OpenRouter
+      </footer>
+    </main>
   );
 }
