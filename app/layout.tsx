@@ -7,6 +7,20 @@ const geist = Geist({ variable: "--font-geist", subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Patrofy — Moldes com IA",
   description: "Geração de moldes de costura profissionais com inteligência artificial.",
+  metadataBase: new URL("https://patrofy.ai"),
+  openGraph: {
+    title: "Patrofy — Moldes com IA",
+    description: "Geração de moldes de costura profissionais com inteligência artificial.",
+    url: "https://patrofy.ai",
+    siteName: "Patrofy",
+    locale: "pt_BR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Patrofy — Moldes com IA",
+    description: "Geração de moldes de costura profissionais com inteligência artificial.",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
