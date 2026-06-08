@@ -30,9 +30,12 @@ export default function Image() {
           alignItems: "center",
           justifyContent: "center",
           marginBottom: 40,
-          fontSize: 64,
+          fontSize: 72,
+          fontWeight: 800,
+          color: "white",
+          fontFamily: "sans-serif",
         }}>
-          📐
+          P
         </div>
 
         {/* Title */}
