@@ -1,0 +1,14 @@
+<svg viewBox="0 0 580 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Bodice pattern icon -->
+  <path
+    d="M 12,118 L 12,52 C 12,12 42,10 72,10 L 122,10 L 122,118 Z"
+    stroke="white"
+    stroke-width="9"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <text x="88" y="113" fill="white" font-size="18" font-family="system-ui,-apple-system,sans-serif" font-weight="400">ai</text>
+  <!-- Patrofy wordmark -->
+  <text x="148" y="100" fill="white" font-size="82" font-weight="700" font-family="system-ui,-apple-system,sans-serif" letter-spacing="-2">Patrofy</text>
+</svg>

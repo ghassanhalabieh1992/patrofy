@@ -5,9 +5,7 @@ export default function LandingPage() {
     <main className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-slate-900 text-white flex flex-col">
       {/* Navbar */}
       <nav className="flex items-center justify-between px-8 py-5 border-b border-white/10">
-        <span className="text-2xl font-bold tracking-tight">
-          Patrofy<span className="text-purple-400">.</span>
-        </span>
+        <span className="text-2xl font-bold tracking-tight">Patrofy</span>
         <Link
           href="/login"
           className="text-sm font-medium bg-purple-600 hover:bg-purple-500 transition-colors px-5 py-2 rounded-full"

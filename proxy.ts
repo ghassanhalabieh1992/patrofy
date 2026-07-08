@@ -28,8 +28,9 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+  const isGated = pathname.startsWith("/dashboard") || pathname.startsWith("/expert") || pathname.startsWith("/admin");
 
-  if (!user && pathname.startsWith("/dashboard")) {
+  if (!user && isGated) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -37,9 +38,25 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
+  if (user && (pathname.startsWith("/expert") || pathname.startsWith("/admin"))) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    const role = profile?.role ?? "user";
+
+    if (pathname.startsWith("/admin") && role !== "admin") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    if (pathname.startsWith("/expert") && role !== "expert" && role !== "admin") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+  }
+
   return supabaseResponse;
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login"],
+  matcher: ["/dashboard/:path*", "/login", "/expert/:path*", "/admin/:path*"],
 };

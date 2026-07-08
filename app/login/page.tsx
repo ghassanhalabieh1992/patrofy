@@ -33,14 +33,21 @@ export default function LoginPage() {
         router.refresh();
 
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password: senha,
           options: { data: { name: nome } },
         });
         if (error) { setErro(error.message); return; }
-        // Supabase sends a confirmation email by default
-        setMsg("Conta criada! Verifique seu email para confirmar o cadastro.");
+
+        if (data.session) {
+          // Confirmação de email desativada no projeto — usuário já está logado
+          router.push("/dashboard");
+          router.refresh();
+        } else {
+          // Confirmação de email ativada — aguardando o usuário confirmar
+          setMsg("Conta criada! Verifique seu email para confirmar o cadastro.");
+        }
       }
     } catch {
       setErro("Erro de rede. Tente novamente.");

@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import type { UserRole } from "@/lib/knowledge/types";
 import { downloadMoldePDF } from "@/lib/pdf";
 import { extractJSON } from "@/lib/llama";
 import { PatternViewer } from "./PatternViewer";
@@ -148,6 +150,7 @@ export default function DashboardPage() {
 
   // ── State ───────────────────────────────────────────────────────
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<UserRole>("user");
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const [savedMoldes, setSavedMoldes] = useState<SavedMolde[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -177,6 +180,9 @@ export default function DashboardPage() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push("/login"); return; }
       setUserEmail(user.email ?? null);
+      supabase.from("profiles").select("role").eq("id", user.id).single().then(({ data: profile }) => {
+        setUserRole((profile?.role as UserRole) ?? "user");
+      });
     });
   }, []);
 
@@ -497,6 +503,16 @@ export default function DashboardPage() {
 
         <div className="p-4 border-t border-white/10">
           {userEmail && <p className="text-xs text-slate-500 truncate mb-2">{userEmail}</p>}
+          {(userRole === "expert" || userRole === "admin") && (
+            <Link href="/expert" className="block text-sm text-purple-400 hover:text-purple-300 transition-colors mb-2">
+              Portal do Especialista
+            </Link>
+          )}
+          {userRole === "admin" && (
+            <Link href="/admin" className="block text-sm text-purple-400 hover:text-purple-300 transition-colors mb-2">
+              Painel Admin
+            </Link>
+          )}
           <button onClick={handleLogout} className="text-sm text-slate-500 hover:text-slate-300 transition-colors">
             Sair da conta
           </button>
