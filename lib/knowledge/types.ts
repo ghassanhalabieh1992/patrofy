@@ -107,6 +107,21 @@ export interface PatternPoint {
   linked_formula_id: string | null
 }
 
+export interface PatternSize {
+  id: string
+  pattern_type_id: string
+  size_label: string
+  order_index: number
+  is_base: boolean
+}
+
+export interface PatternGradingRule {
+  id: string
+  pattern_type_id: string
+  measurement_id: string
+  increment_cm: number
+}
+
 export interface PatternSizeValue {
   id: string
   pattern_type_id: string

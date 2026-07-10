@@ -7,7 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import type {
   PatternType, PatternComponent, Measurement, PatternTypeMeasurement,
   Formula, ConstructionRule, EaseRule, ValidationRule,
-  PatternReferenceFile, PatternPoint, PatternSizeValue, ExpertNote, UserRole, ExpressionType, ReferenceFileType,
+  PatternReferenceFile, PatternPoint, PatternSize, PatternGradingRule, PatternSizeValue,
+  ExpertNote, UserRole, ExpressionType, ReferenceFileType,
 } from "@/lib/knowledge/types";
 import { STATUS_LABELS, STATUS_COLORS } from "@/lib/knowledge/types";
 
@@ -55,6 +56,8 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
 
   const [measurementsDict, setMeasurementsDict] = useState<Measurement[]>([]);
   const [patternMeasurements, setPatternMeasurements] = useState<PatternTypeMeasurement[]>([]);
+  const [sizes, setSizes] = useState<PatternSize[]>([]);
+  const [gradingRules, setGradingRules] = useState<PatternGradingRule[]>([]);
   const [sizeValues, setSizeValues] = useState<PatternSizeValue[]>([]);
 
   const [formulas, setFormulas] = useState<Formula[]>([]);
@@ -94,6 +97,12 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
 
     const { data: pm } = await supabase.from("pattern_type_measurements").select("*").eq("pattern_type_id", id);
     setPatternMeasurements((pm as PatternTypeMeasurement[]) ?? []);
+
+    const { data: sz } = await supabase.from("pattern_sizes").select("*").eq("pattern_type_id", id).order("order_index");
+    setSizes((sz as PatternSize[]) ?? []);
+
+    const { data: gr } = await supabase.from("pattern_grading_rules").select("*").eq("pattern_type_id", id);
+    setGradingRules((gr as PatternGradingRule[]) ?? []);
 
     const { data: sv } = await supabase.from("pattern_size_values").select("*").eq("pattern_type_id", id);
     setSizeValues((sv as PatternSizeValue[]) ?? []);
@@ -208,13 +217,44 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
     setPatternMeasurements((pm as PatternTypeMeasurement[]) ?? []);
   }
 
-  async function setSizeValue(sizeLabel: string, measurementId: string, valueCm: number | null) {
+  async function reloadSizingData() {
+    const { data: sz } = await supabase.from("pattern_sizes").select("*").eq("pattern_type_id", id).order("order_index");
+    setSizes((sz as PatternSize[]) ?? []);
+    const { data: gr } = await supabase.from("pattern_grading_rules").select("*").eq("pattern_type_id", id);
+    setGradingRules((gr as PatternGradingRule[]) ?? []);
+    const { data: sv } = await supabase.from("pattern_size_values").select("*").eq("pattern_type_id", id);
+    setSizeValues((sv as PatternSizeValue[]) ?? []);
+  }
+
+  async function addSize(label: string) {
+    const isFirst = sizes.length === 0;
+    await supabase.from("pattern_sizes").insert({
+      pattern_type_id: id, size_label: label, order_index: sizes.length, is_base: isFirst,
+    });
+    reloadSizingData();
+  }
+
+  async function removeSize(sizeId: string, sizeLabel: string) {
+    await supabase.from("pattern_sizes").delete().eq("id", sizeId);
+    await supabase.from("pattern_size_values").delete().eq("pattern_type_id", id).eq("size_label", sizeLabel);
+    reloadSizingData();
+  }
+
+  async function setBaseSize(sizeId: string) {
+    await supabase.from("pattern_sizes").update({ is_base: false }).eq("pattern_type_id", id);
+    await supabase.from("pattern_sizes").update({ is_base: true }).eq("id", sizeId);
+    reloadSizingData();
+  }
+
+  async function setBaseValue(measurementId: string, valueCm: number | null) {
+    const base = sizes.find((s) => s.is_base);
+    if (!base) return;
     if (valueCm === null) {
       await supabase.from("pattern_size_values").delete()
-        .eq("pattern_type_id", id).eq("size_label", sizeLabel).eq("measurement_id", measurementId);
+        .eq("pattern_type_id", id).eq("size_label", base.size_label).eq("measurement_id", measurementId);
     } else {
       await supabase.from("pattern_size_values").upsert(
-        { pattern_type_id: id, size_label: sizeLabel, measurement_id: measurementId, value_cm: valueCm },
+        { pattern_type_id: id, size_label: base.size_label, measurement_id: measurementId, value_cm: valueCm },
         { onConflict: "pattern_type_id,size_label,measurement_id" }
       );
     }
@@ -222,10 +262,17 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
     setSizeValues((sv as PatternSizeValue[]) ?? []);
   }
 
-  async function removeSize(sizeLabel: string) {
-    await supabase.from("pattern_size_values").delete().eq("pattern_type_id", id).eq("size_label", sizeLabel);
-    const { data: sv } = await supabase.from("pattern_size_values").select("*").eq("pattern_type_id", id);
-    setSizeValues((sv as PatternSizeValue[]) ?? []);
+  async function setGradingRule(measurementId: string, incrementCm: number | null) {
+    if (incrementCm === null) {
+      await supabase.from("pattern_grading_rules").delete().eq("pattern_type_id", id).eq("measurement_id", measurementId);
+    } else {
+      await supabase.from("pattern_grading_rules").upsert(
+        { pattern_type_id: id, measurement_id: measurementId, increment_cm: incrementCm },
+        { onConflict: "pattern_type_id,measurement_id" }
+      );
+    }
+    const { data: gr } = await supabase.from("pattern_grading_rules").select("*").eq("pattern_type_id", id);
+    setGradingRules((gr as PatternGradingRule[]) ?? []);
   }
 
   async function addFormula(point_name: string, expression: string, expression_type: ExpressionType) {
@@ -405,10 +452,15 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
             <SizesTab
               dict={measurementsDict}
               assigned={patternMeasurements}
+              sizes={sizes}
+              gradingRules={gradingRules}
               values={sizeValues}
               canEdit={canEdit}
-              onSetValue={setSizeValue}
+              onAddSize={addSize}
               onRemoveSize={removeSize}
+              onSetBaseSize={setBaseSize}
+              onSetBaseValue={setBaseValue}
+              onSetGradingRule={setGradingRule}
             />
           )}
 
@@ -637,95 +689,156 @@ function MeasurementsTab({ dict, assigned, canEdit, onToggle, onAddMeasurement }
   );
 }
 
-function SizesTab({ dict, assigned, values, canEdit, onSetValue, onRemoveSize }: {
-  dict: Measurement[]; assigned: PatternTypeMeasurement[]; values: PatternSizeValue[]; canEdit: boolean;
-  onSetValue: (sizeLabel: string, measurementId: string, valueCm: number | null) => void;
-  onRemoveSize: (sizeLabel: string) => void;
+function SizesTab({ dict, assigned, sizes, gradingRules, values, canEdit, onAddSize, onRemoveSize, onSetBaseSize, onSetBaseValue, onSetGradingRule }: {
+  dict: Measurement[]; assigned: PatternTypeMeasurement[]; sizes: PatternSize[]; gradingRules: PatternGradingRule[];
+  values: PatternSizeValue[]; canEdit: boolean;
+  onAddSize: (label: string) => void;
+  onRemoveSize: (sizeId: string, sizeLabel: string) => void;
+  onSetBaseSize: (sizeId: string) => void;
+  onSetBaseValue: (measurementId: string, valueCm: number | null) => void;
+  onSetGradingRule: (measurementId: string, incrementCm: number | null) => void;
 }) {
   const [newSize, setNewSize] = useState("");
-  const [pendingSizes, setPendingSizes] = useState<string[]>([]);
 
   const activeMeasurements = dict.filter((m) => assigned.some((a) => a.measurement_id === m.id));
-  const sizes = Array.from(new Set([...values.map((v) => v.size_label), ...pendingSizes]));
+  const base = sizes.find((s) => s.is_base);
 
   if (activeMeasurements.length === 0) {
-    return <p className="text-slate-500 text-sm max-w-md">Marque pelo menos uma medida na aba &quot;Medidas&quot; antes de montar a tabela de tamanhos.</p>;
+    return <p className="text-slate-500 text-sm max-w-md">Marque pelo menos uma medida na aba &quot;Medidas&quot; antes de montar a gradação de tamanhos.</p>;
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-xs text-slate-500 max-w-lg">
-        Tabela de referência (P, M, G, GG...) só para consulta e conferência sua — não afeta o que é gerado para o cliente, que sempre usa as medidas reais dele nas fórmulas.
-      </p>
+    <div className="flex flex-col gap-6">
+      <div className="text-xs text-slate-400 max-w-lg bg-white/5 border border-white/10 rounded-xl p-3 space-y-1">
+        <p>
+          Isso é só documentação/conferência sua — não afeta o que é gerado para o cliente, que sempre usa as medidas reais dele nas fórmulas.
+        </p>
+        <p>
+          Como funciona: você digita as medidas reais só do <strong className="text-slate-300">tamanho base</strong>, e define a <strong className="text-slate-300">regra de gradação</strong> (diferença fixa entre um tamanho e o próximo) para cada medida. O resto da tabela é calculado automaticamente.
+        </p>
+      </div>
 
-      {canEdit && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const label = newSize.trim().toUpperCase();
-            if (label && !sizes.includes(label)) setPendingSizes((prev) => [...prev, label]);
-            setNewSize("");
-          }}
-          className="flex gap-2"
-        >
-          <input value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder="GG" className={inputCls + " w-28"} />
-          <button type="submit" className={btnCls}>+ Tamanho</button>
-        </form>
-      )}
+      {/* Size list */}
+      <section>
+        <h3 className="font-semibold mb-3 text-sm">Tamanhos (em ordem, do menor ao maior)</h3>
+        {canEdit && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const label = newSize.trim().toUpperCase();
+              if (label) onAddSize(label);
+              setNewSize("");
+            }}
+            className="flex gap-2 mb-3"
+          >
+            <input value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder="GG" className={inputCls + " w-28"} />
+            <button type="submit" className={btnCls}>+ Tamanho</button>
+          </form>
+        )}
+        {sizes.length === 0 ? (
+          <p className="text-slate-500 text-sm">Nenhum tamanho adicionado ainda.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {sizes.map((s) => (
+              <div
+                key={s.id}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-sm ${
+                  s.is_base ? "bg-purple-600/20 border-purple-500/40 text-purple-200" : "bg-white/5 border-white/10 text-slate-300"
+                }`}
+              >
+                <span className="font-mono">{s.size_label}</span>
+                {s.is_base ? (
+                  <span className="text-xs text-purple-300">(base)</span>
+                ) : canEdit ? (
+                  <button onClick={() => onSetBaseSize(s.id)} className="text-xs text-slate-400 hover:text-white underline">tornar base</button>
+                ) : null}
+                {canEdit && (
+                  <button onClick={() => onRemoveSize(s.id, s.size_label)} className="text-red-400 hover:text-red-300 text-xs">×</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
-      {sizes.length === 0 ? (
-        <p className="text-slate-500 text-sm">Nenhum tamanho adicionado ainda.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-white/10 text-left text-xs text-slate-400">
-                <th className="py-2 pr-4 font-medium">Medida</th>
-                {sizes.map((size) => (
-                  <th key={size} className="py-2 px-2 font-medium text-center">
-                    <div className="flex items-center gap-1 justify-center">
-                      {size}
-                      {canEdit && (
-                        <button
-                          onClick={() => { onRemoveSize(size); setPendingSizes((prev) => prev.filter((s) => s !== size)); }}
-                          className="text-red-400 hover:text-red-300"
-                          title="Remover tamanho"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {activeMeasurements.map((m) => (
-                <tr key={m.id} className="border-b border-white/5">
-                  <td className="py-2 pr-4 text-slate-300 whitespace-nowrap">{m.label_pt}</td>
-                  {sizes.map((size) => {
-                    const v = values.find((x) => x.size_label === size && x.measurement_id === m.id);
-                    return (
-                      <td key={size} className="py-1.5 px-2">
-                        <input
-                          type="number"
-                          step="0.1"
-                          defaultValue={v?.value_cm ?? ""}
-                          disabled={!canEdit}
-                          onBlur={(e) => {
-                            const raw = e.target.value.trim();
-                            onSetValue(size, m.id, raw === "" ? null : parseFloat(raw));
-                          }}
-                          className={inputCls + " w-20 text-center"}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {base && (
+        <>
+          {/* Base values */}
+          <section>
+            <h3 className="font-semibold mb-3 text-sm">Medidas reais do tamanho base ({base.size_label})</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {activeMeasurements.map((m) => {
+                const v = values.find((x) => x.size_label === base.size_label && x.measurement_id === m.id);
+                return (
+                  <Field key={m.id} label={m.label_pt}>
+                    <input
+                      type="number" step="0.1" defaultValue={v?.value_cm ?? ""} disabled={!canEdit}
+                      onBlur={(e) => { const raw = e.target.value.trim(); onSetBaseValue(m.id, raw === "" ? null : parseFloat(raw)); }}
+                      className={inputCls + " w-full"}
+                    />
+                  </Field>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Grading rules */}
+          <section>
+            <h3 className="font-semibold mb-3 text-sm">Regra de gradação — diferença por tamanho (cm)</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {activeMeasurements.map((m) => {
+                const r = gradingRules.find((x) => x.measurement_id === m.id);
+                return (
+                  <Field key={m.id} label={m.label_pt}>
+                    <input
+                      type="number" step="0.1" defaultValue={r?.increment_cm ?? ""} disabled={!canEdit}
+                      placeholder="ex: 2"
+                      onBlur={(e) => { const raw = e.target.value.trim(); onSetGradingRule(m.id, raw === "" ? null : parseFloat(raw)); }}
+                      className={inputCls + " w-full"}
+                    />
+                  </Field>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Computed table */}
+          {sizes.length > 1 && (
+            <section>
+              <h3 className="font-semibold mb-3 text-sm">Tabela calculada</h3>
+              <div className="overflow-x-auto">
+                <table className="text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 text-left text-xs text-slate-400">
+                      <th className="py-2 pr-4 font-medium">Medida</th>
+                      {sizes.map((s) => (
+                        <th key={s.id} className="py-2 px-3 font-medium text-center">{s.size_label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeMeasurements.map((m) => {
+                      const baseValue = values.find((x) => x.size_label === base.size_label && x.measurement_id === m.id)?.value_cm;
+                      const rule = gradingRules.find((x) => x.measurement_id === m.id)?.increment_cm;
+                      return (
+                        <tr key={m.id} className="border-b border-white/5">
+                          <td className="py-2 pr-4 text-slate-300 whitespace-nowrap">{m.label_pt}</td>
+                          {sizes.map((s) => {
+                            if (baseValue === undefined) return <td key={s.id} className="py-2 px-3 text-center text-slate-600">—</td>;
+                            if (s.id === base.id) return <td key={s.id} className="py-2 px-3 text-center font-semibold text-purple-300">{baseValue}</td>;
+                            if (rule === undefined) return <td key={s.id} className="py-2 px-3 text-center text-slate-600" title="Defina a regra de gradação">—</td>;
+                            const computed = baseValue + rule * (s.order_index - base.order_index);
+                            return <td key={s.id} className="py-2 px-3 text-center text-slate-300">{computed.toFixed(1)}</td>;
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   );

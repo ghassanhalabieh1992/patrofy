@@ -206,9 +206,35 @@ CREATE TABLE IF NOT EXISTS pattern_points (
   linked_formula_id     UUID REFERENCES formulas(id) ON DELETE SET NULL
 );
 
--- Tabela de referência de tamanhos (P/M/G/GG...) por padrão — documentação/
--- conferência do especialista, não é usada pelo motor de geração (que calcula
--- direto das medidas reais do cliente).
+-- Grade de tamanhos (P/M/G/GG...) por padrão — só documentação/conferência do
+-- especialista, não é usada pelo motor de geração (que calcula direto das
+-- medidas reais do cliente). Modelo: o especialista digita os valores reais
+-- só do tamanho "base", e uma regra de incremento por medida (ex: +2cm por
+-- tamanho) — o restante da tabela é calculado automaticamente a partir disso.
+
+CREATE TABLE IF NOT EXISTS pattern_sizes (
+  id               UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  pattern_type_id  UUID REFERENCES pattern_types(id) ON DELETE CASCADE NOT NULL,
+  size_label       TEXT NOT NULL,
+  order_index      INT NOT NULL,
+  is_base          BOOLEAN NOT NULL DEFAULT FALSE,
+  UNIQUE (pattern_type_id, size_label)
+);
+
+CREATE INDEX IF NOT EXISTS pattern_sizes_pt_idx ON pattern_sizes (pattern_type_id);
+
+CREATE TABLE IF NOT EXISTS pattern_grading_rules (
+  id               UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  pattern_type_id  UUID REFERENCES pattern_types(id) ON DELETE CASCADE NOT NULL,
+  measurement_id   UUID REFERENCES measurements(id) ON DELETE CASCADE NOT NULL,
+  increment_cm     NUMERIC NOT NULL,
+  UNIQUE (pattern_type_id, measurement_id)
+);
+
+CREATE INDEX IF NOT EXISTS pattern_grading_rules_pt_idx ON pattern_grading_rules (pattern_type_id);
+
+-- Valores reais digitados pelo especialista — sempre para o tamanho marcado
+-- como base em pattern_sizes.
 CREATE TABLE IF NOT EXISTS pattern_size_values (
   id               UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   pattern_type_id  UUID REFERENCES pattern_types(id) ON DELETE CASCADE NOT NULL,
@@ -271,6 +297,8 @@ ALTER TABLE ease_rules                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE validation_rules          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pattern_reference_files   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pattern_points            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pattern_sizes             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pattern_grading_rules     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pattern_size_values       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expert_notes              ENABLE ROW LEVEL SECURITY;
 
@@ -349,6 +377,18 @@ CREATE POLICY "gerencia_pontos" ON pattern_points
   FOR ALL
   USING (owns_pattern_component(pattern_component_id))
   WITH CHECK (owns_pattern_component(pattern_component_id));
+
+DROP POLICY IF EXISTS "gerencia_tamanhos" ON pattern_sizes;
+CREATE POLICY "gerencia_tamanhos" ON pattern_sizes
+  FOR ALL
+  USING (owns_pattern_type(pattern_type_id))
+  WITH CHECK (owns_pattern_type(pattern_type_id));
+
+DROP POLICY IF EXISTS "gerencia_regras_gradacao" ON pattern_grading_rules;
+CREATE POLICY "gerencia_regras_gradacao" ON pattern_grading_rules
+  FOR ALL
+  USING (owns_pattern_type(pattern_type_id))
+  WITH CHECK (owns_pattern_type(pattern_type_id));
 
 DROP POLICY IF EXISTS "gerencia_tabela_tamanhos" ON pattern_size_values;
 CREATE POLICY "gerencia_tabela_tamanhos" ON pattern_size_values
