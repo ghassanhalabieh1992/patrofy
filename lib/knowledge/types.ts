@@ -3,7 +3,7 @@
 export type PatternStatus = "draft" | "pending_review" | "approved" | "rejected"
 export type UserRole = "user" | "expert" | "admin"
 export type ExpressionType = "point_x" | "point_y" | "distance" | "angle"
-export type ReferenceFileType = "image" | "pdf" | "dxf"
+export type ReferenceFileType = "image" | "pdf" | "dxf" | "ads" | "amk" | "adsx" | "amkx"
 
 export interface Profile {
   id: string

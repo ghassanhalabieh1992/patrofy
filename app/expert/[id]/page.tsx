@@ -715,12 +715,16 @@ function FilesTab({ components, selectedComponentId, onSelectComponent, files, c
         <>
           {canEdit && (
             <form onSubmit={(e) => { e.preventDefault(); if (pending) { onUpload(pending, fileType, notesText); setPending(null); setNotesText(""); } }} className="flex flex-col gap-2 mb-4">
-              <input type="file" accept="image/*,.pdf,.dxf" onChange={(e) => setPending(e.target.files?.[0] ?? null)} className="text-sm text-slate-300" />
+              <input type="file" accept="image/*,.pdf,.dxf,.ads,.amk,.adsx,.amkx" onChange={(e) => setPending(e.target.files?.[0] ?? null)} className="text-sm text-slate-300" />
               <div className="flex gap-2">
                 <select value={fileType} onChange={(e) => setFileType(e.target.value as ReferenceFileType)} className={inputCls}>
                   <option value="image">Imagem</option>
                   <option value="pdf">PDF</option>
                   <option value="dxf">DXF</option>
+                  <option value="ads">ADS (Audaces)</option>
+                  <option value="amk">AMK (Audaces)</option>
+                  <option value="adsx">ADSX (Audaces)</option>
+                  <option value="amkx">AMKX (Audaces)</option>
                 </select>
                 <input value={notesText} onChange={(e) => setNotesText(e.target.value)} placeholder="Notas" className={inputCls + " flex-1"} />
               </div>

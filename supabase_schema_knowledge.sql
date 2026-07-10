@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS pattern_reference_files (
   id                    UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   pattern_component_id  UUID REFERENCES pattern_components(id) ON DELETE CASCADE NOT NULL,
   file_url              TEXT NOT NULL,
-  file_type             TEXT NOT NULL CHECK (file_type IN ('image', 'pdf', 'dxf')),
+  file_type             TEXT NOT NULL CHECK (file_type IN ('image', 'pdf', 'dxf', 'ads', 'amk', 'adsx', 'amkx')),
   uploaded_by           UUID REFERENCES auth.users(id) NOT NULL,
   notes                 TEXT,
   created_at            TIMESTAMPTZ DEFAULT NOW()
