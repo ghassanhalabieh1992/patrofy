@@ -122,6 +122,21 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
     load();
   }
 
+  async function deletePattern() {
+    if (!confirm(`Excluir o padrão "${pattern?.name}" e tudo dentro dele (peças, fórmulas, regras, arquivos)? Essa ação não pode ser desfeita.`)) return;
+
+    const { data: files } = await supabase
+      .from("pattern_reference_files")
+      .select("file_url, pattern_components!inner(pattern_type_id)")
+      .eq("pattern_components.pattern_type_id", id);
+    const paths = ((files as unknown as { file_url: string }[]) ?? []).map((f) => f.file_url);
+    if (paths.length > 0) await supabase.storage.from("pattern-references").remove(paths);
+
+    await supabase.from("expert_notes").delete().eq("entity_type", "pattern_type").eq("entity_id", id);
+    await supabase.from("pattern_types").delete().eq("id", id);
+    router.push("/expert");
+  }
+
   async function reviewDecision(decision: "approved" | "rejected") {
     if (!userId) return;
     await supabase.from("pattern_types").update({
@@ -141,6 +156,16 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
     await supabase.from("pattern_components").delete().eq("id", componentId);
     if (selectedComponentId === componentId) setSelectedComponentId(null);
     load();
+  }
+
+  async function addMeasurement(code: string, label_pt: string, unit: string) {
+    const { data, error: insErr } = await supabase
+      .from("measurements")
+      .insert({ code, label_pt, unit })
+      .select()
+      .single();
+    if (insErr) { setError(insErr.message); return; }
+    setMeasurementsDict((prev) => [...prev, data as Measurement].sort((a, b) => a.code.localeCompare(b.code)));
   }
 
   async function toggleMeasurement(measurementId: string, assigned: boolean, isRequired: boolean) {
@@ -289,7 +314,7 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
           )}
           {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
 
-          {tab === "info" && <InfoTab pattern={pattern} canEdit={canEdit} onSave={updateBasicInfo} />}
+          {tab === "info" && <InfoTab pattern={pattern} canEdit={canEdit} onSave={updateBasicInfo} onDelete={deletePattern} />}
 
           {tab === "components" && (
             <ComponentsTab
@@ -308,6 +333,7 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
               assigned={patternMeasurements}
               canEdit={canEdit}
               onToggle={toggleMeasurement}
+              onAddMeasurement={addMeasurement}
             />
           )}
 
@@ -388,19 +414,38 @@ const btnCls = "bg-purple-600 hover:bg-purple-500 disabled:opacity-50 transition
 
 // ── Tabs ──────────────────────────────────────────────────────────
 
-function InfoTab({ pattern, canEdit, onSave }: { pattern: PatternType; canEdit: boolean; onSave: (name: string, category: string) => void }) {
+function InfoTab({ pattern, canEdit, onSave, onDelete }: {
+  pattern: PatternType; canEdit: boolean; onSave: (name: string, category: string) => void; onDelete: () => void;
+}) {
   const [name, setName] = useState(pattern.name);
   const [category, setCategory] = useState(pattern.category);
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSave(name, category); }} className="flex flex-col gap-4 max-w-md">
-      <Field label="Nome do padrão">
-        <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canEdit} className={inputCls} />
-      </Field>
-      <Field label="Categoria">
-        <input value={category} onChange={(e) => setCategory(e.target.value)} disabled={!canEdit} className={inputCls} />
-      </Field>
-      {canEdit && <button type="submit" className={btnCls}>Salvar</button>}
-    </form>
+    <div className="flex flex-col gap-8 max-w-md">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(name, category); }} className="flex flex-col gap-4">
+        <Field label="Nome do padrão">
+          <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canEdit} className={inputCls} />
+        </Field>
+        <Field label="Categoria">
+          <input value={category} onChange={(e) => setCategory(e.target.value)} disabled={!canEdit} className={inputCls} />
+        </Field>
+        {canEdit && <button type="submit" className={btnCls}>Salvar</button>}
+      </form>
+
+      {canEdit && (
+        <div className="border border-red-500/20 bg-red-500/5 rounded-xl p-4">
+          <p className="text-sm text-red-300 font-medium mb-1">Zona de risco</p>
+          <p className="text-xs text-slate-400 mb-3">
+            Exclui o padrão inteiro e tudo dentro dele (peças, fórmulas, regras, arquivos). Não pode ser desfeito.
+          </p>
+          <button
+            onClick={onDelete}
+            className="bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 transition-colors px-4 py-2 rounded-xl text-sm font-medium"
+          >
+            Excluir padrão
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -434,28 +479,72 @@ function ComponentsTab({ components, selectedId, canEdit, onSelect, onAdd, onDel
   );
 }
 
-function MeasurementsTab({ dict, assigned, canEdit, onToggle }: {
+function MeasurementsTab({ dict, assigned, canEdit, onToggle, onAddMeasurement }: {
   dict: Measurement[]; assigned: PatternTypeMeasurement[]; canEdit: boolean;
   onToggle: (measurementId: string, assigned: boolean, isRequired: boolean) => void;
+  onAddMeasurement: (code: string, label_pt: string, unit: string) => void;
 }) {
+  const [showNew, setShowNew] = useState(false);
+  const [code, setCode] = useState("");
+  const [labelPt, setLabelPt] = useState("");
+  const [unit, setUnit] = useState("cm");
+
   return (
-    <div className="grid gap-2">
-      {dict.map((m) => {
-        const a = assigned.find((x) => x.measurement_id === m.id);
-        return (
-          <label key={m.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10">
-            <input
-              type="checkbox"
-              checked={!!a}
-              disabled={!canEdit}
-              onChange={() => onToggle(m.id, !!a, true)}
-              className="w-4 h-4"
-            />
-            <span className="flex-1">{m.label_pt}</span>
-            <span className="text-xs text-slate-500">{m.code} ({m.unit})</span>
-          </label>
-        );
-      })}
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-2">
+        {dict.map((m) => {
+          const a = assigned.find((x) => x.measurement_id === m.id);
+          return (
+            <label key={m.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10">
+              <input
+                type="checkbox"
+                checked={!!a}
+                disabled={!canEdit}
+                onChange={() => onToggle(m.id, !!a, true)}
+                className="w-4 h-4"
+              />
+              <span className="flex-1">{m.label_pt}</span>
+              <span className="text-xs text-slate-500">{m.code} ({m.unit})</span>
+            </label>
+          );
+        })}
+      </div>
+
+      {canEdit && (
+        showNew ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (code.trim() && labelPt.trim()) {
+                onAddMeasurement(code.trim(), labelPt.trim(), unit.trim() || "cm");
+                setCode(""); setLabelPt(""); setUnit("cm"); setShowNew(false);
+              }
+            }}
+            className="flex flex-col gap-2 p-4 rounded-xl bg-white/5 border border-white/10"
+          >
+            <p className="text-sm text-slate-300 mb-1">Nova medida (quando nenhuma das 17 acima serve)</p>
+            <div className="flex gap-2">
+              <Field label="Código (sem espaços/acentos)">
+                <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="circAbdomen" className={inputCls + " w-full"} />
+              </Field>
+              <Field label="Nome exibido">
+                <input value={labelPt} onChange={(e) => setLabelPt(e.target.value)} placeholder="Circunferência do abdômen" className={inputCls + " w-full"} />
+              </Field>
+              <Field label="Unidade">
+                <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="cm" className={inputCls + " w-20"} />
+              </Field>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" className={btnCls}>Adicionar medida</button>
+              <button type="button" onClick={() => setShowNew(false)} className="text-slate-400 hover:text-white text-sm px-4 py-2">Cancelar</button>
+            </div>
+          </form>
+        ) : (
+          <button onClick={() => setShowNew(true)} className="text-sm text-purple-300 hover:text-purple-200 transition-colors self-start">
+            + Adicionar nova medida
+          </button>
+        )
+      )}
     </div>
   );
 }

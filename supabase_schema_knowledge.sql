@@ -50,14 +50,24 @@ RETURNS BOOLEAN AS $$
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- Única forma permitida de alterar o papel de um usuário (usada pela tela /admin/users)
+-- Qualquer admin pode conceder/revogar "expert", mas somente o admin principal
+-- (email fixo abaixo) pode conceder o papel de "admin".
 CREATE OR REPLACE FUNCTION set_user_role(target_user_id UUID, new_role TEXT)
 RETURNS VOID AS $$
+DECLARE
+  caller_email TEXT;
 BEGIN
   IF NOT is_admin() THEN
     RAISE EXCEPTION 'Apenas administradores podem alterar papéis de usuário';
   END IF;
   IF new_role NOT IN ('user', 'expert', 'admin') THEN
     RAISE EXCEPTION 'Papel inválido: %', new_role;
+  END IF;
+  IF new_role = 'admin' THEN
+    SELECT email INTO caller_email FROM auth.users WHERE id = auth.uid();
+    IF caller_email IS DISTINCT FROM 'ghassanhalabieh@gmail.com' THEN
+      RAISE EXCEPTION 'Apenas o administrador principal pode conceder o papel de admin';
+    END IF;
   END IF;
   UPDATE profiles SET role = new_role WHERE id = target_user_id;
 END;

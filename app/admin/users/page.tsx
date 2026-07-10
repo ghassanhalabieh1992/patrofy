@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { ProfileWithEmail, UserRole } from "@/lib/knowledge/types";
 
 const ROLE_LABELS: Record<UserRole, string> = { user: "Usuário", expert: "Especialista", admin: "Admin" };
+const SUPER_ADMIN_EMAIL = "ghassanhalabieh@gmail.com";
 
 export default function AdminUsersPage() {
   const supabase = createClient();
@@ -13,9 +14,13 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    setIsSuperAdmin(user?.email === SUPER_ADMIN_EMAIL);
+
     const { data, error } = await supabase.rpc("list_profiles_with_email");
     if (error) { setError(error.message); setLoading(false); return; }
     setProfiles((data as ProfileWithEmail[]) ?? []);
@@ -67,9 +72,11 @@ export default function AdminUsersPage() {
                   onChange={(e) => changeRole(p.id, e.target.value as UserRole)}
                   className="bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-400"
                 >
-                  {(Object.keys(ROLE_LABELS) as UserRole[]).map((r) => (
-                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                  ))}
+                  {(Object.keys(ROLE_LABELS) as UserRole[])
+                    .filter((r) => r !== "admin" || isSuperAdmin || p.role === "admin")
+                    .map((r) => (
+                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                    ))}
                 </select>
               </div>
             ))}
