@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, use } from "react";
+import { useState, useEffect, useCallback, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -46,6 +46,7 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
   const [easeRules, setEaseRules] = useState<EaseRule[]>([]);
   const [validationRules, setValidationRules] = useState<ValidationRule[]>([]);
   const [referenceFiles, setReferenceFiles] = useState<PatternReferenceFile[]>([]);
+  const [patternLevelFiles, setPatternLevelFiles] = useState<PatternReferenceFile[]>([]);
   const [points, setPoints] = useState<PatternPoint[]>([]);
   const [notes, setNotes] = useState<ExpertNote[]>([]);
 
@@ -87,6 +88,9 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
     const { data: nt } = await supabase.from("expert_notes").select("*").eq("entity_type", "pattern_type").eq("entity_id", id).order("created_at", { ascending: false });
     setNotes((nt as ExpertNote[]) ?? []);
 
+    const { data: plf } = await supabase.from("pattern_reference_files").select("*").eq("pattern_type_id", id).order("created_at", { ascending: false });
+    setPatternLevelFiles((plf as PatternReferenceFile[]) ?? []);
+
     setLoading(false);
   }, [id, router, supabase]);
 
@@ -125,11 +129,18 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
   async function deletePattern() {
     if (!confirm(`Excluir o padrão "${pattern?.name}" e tudo dentro dele (peças, fórmulas, regras, arquivos)? Essa ação não pode ser desfeita.`)) return;
 
-    const { data: files } = await supabase
+    const { data: componentFiles } = await supabase
       .from("pattern_reference_files")
       .select("file_url, pattern_components!inner(pattern_type_id)")
       .eq("pattern_components.pattern_type_id", id);
-    const paths = ((files as unknown as { file_url: string }[]) ?? []).map((f) => f.file_url);
+    const { data: patternFiles } = await supabase
+      .from("pattern_reference_files")
+      .select("file_url")
+      .eq("pattern_type_id", id);
+    const paths = [
+      ...((componentFiles as unknown as { file_url: string }[]) ?? []),
+      ...((patternFiles as unknown as { file_url: string }[]) ?? []),
+    ].map((f) => f.file_url);
     if (paths.length > 0) await supabase.storage.from("pattern-references").remove(paths);
 
     await supabase.from("expert_notes").delete().eq("entity_type", "pattern_type").eq("entity_id", id);
@@ -235,10 +246,24 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
     loadComponentData(selectedComponentId);
   }
 
+  async function uploadPatternLevelFile(file: File, fileType: ReferenceFileType, notesText: string) {
+    if (!userId) return;
+    const path = `${userId}/${id}/_padrao-completo/${Date.now()}-${file.name}`;
+    const { error: upErr } = await supabase.storage.from("pattern-references").upload(path, file);
+    if (upErr) { setError(upErr.message); return; }
+    await supabase.from("pattern_reference_files").insert({
+      pattern_type_id: id, file_url: path, file_type: fileType, uploaded_by: userId, notes: notesText,
+    });
+    const { data: plf } = await supabase.from("pattern_reference_files").select("*").eq("pattern_type_id", id).order("created_at", { ascending: false });
+    setPatternLevelFiles((plf as PatternReferenceFile[]) ?? []);
+  }
+
   async function deleteReferenceFile(fileId: string, fileUrl: string) {
     await supabase.storage.from("pattern-references").remove([fileUrl]);
     await supabase.from("pattern_reference_files").delete().eq("id", fileId);
     if (selectedComponentId) loadComponentData(selectedComponentId);
+    const { data: plf } = await supabase.from("pattern_reference_files").select("*").eq("pattern_type_id", id).order("created_at", { ascending: false });
+    setPatternLevelFiles((plf as PatternReferenceFile[]) ?? []);
   }
 
   async function addPoint(label: string, x_cm: number, y_cm: number) {
@@ -373,8 +398,10 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
               selectedComponentId={selectedComponentId}
               onSelectComponent={setSelectedComponentId}
               files={referenceFiles}
+              patternLevelFiles={patternLevelFiles}
               canEdit={canEdit}
               onUpload={uploadReferenceFile}
+              onUploadPatternLevel={uploadPatternLevelFile}
               onDelete={deleteReferenceFile}
             />
           )}
@@ -728,48 +755,110 @@ function RulesTab({ components, selectedComponentId, onSelectComponent, construc
   );
 }
 
-function FilesTab({ components, selectedComponentId, onSelectComponent, files, canEdit, onUpload, onDelete }: {
-  components: PatternComponent[]; selectedComponentId: string | null; onSelectComponent: (id: string) => void;
-  files: PatternReferenceFile[]; canEdit: boolean;
-  onUpload: (file: File, type: ReferenceFileType, notes: string) => void; onDelete: (id: string, url: string) => void;
+function FileUploadForm({ canEdit, onUpload }: {
+  canEdit: boolean;
+  onUpload: (file: File, type: ReferenceFileType, notes: string) => void;
 }) {
   const [fileType, setFileType] = useState<ReferenceFileType>("image");
   const [notesText, setNotesText] = useState("");
   const [pending, setPending] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  if (!canEdit) return null;
 
   return (
-    <div>
-      <ComponentPicker components={components} selectedComponentId={selectedComponentId} onSelectComponent={onSelectComponent} />
-      {selectedComponentId && (
-        <>
-          {canEdit && (
-            <form onSubmit={(e) => { e.preventDefault(); if (pending) { onUpload(pending, fileType, notesText); setPending(null); setNotesText(""); } }} className="flex flex-col gap-2 mb-4">
-              <input type="file" accept="image/*,.pdf,.dxf,.ads,.amk,.adsx,.amkx" onChange={(e) => setPending(e.target.files?.[0] ?? null)} className="text-sm text-slate-300" />
-              <div className="flex gap-2">
-                <select value={fileType} onChange={(e) => setFileType(e.target.value as ReferenceFileType)} className={inputCls}>
-                  <option value="image">Imagem</option>
-                  <option value="pdf">PDF</option>
-                  <option value="dxf">DXF</option>
-                  <option value="ads">ADS (Audaces)</option>
-                  <option value="amk">AMK (Audaces)</option>
-                  <option value="adsx">ADSX (Audaces)</option>
-                  <option value="amkx">AMKX (Audaces)</option>
-                </select>
-                <input value={notesText} onChange={(e) => setNotesText(e.target.value)} placeholder="Notas" className={inputCls + " flex-1"} />
-              </div>
-              <button type="submit" disabled={!pending} className={btnCls + " self-start"}>Enviar arquivo</button>
-            </form>
+    <form onSubmit={(e) => { e.preventDefault(); if (pending) { onUpload(pending, fileType, notesText); setPending(null); setNotesText(""); } }} className="flex flex-col gap-2 mb-4">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*,.pdf,.dxf,.ads,.amk,.adsx,.amkx"
+        onChange={(e) => setPending(e.target.files?.[0] ?? null)}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        className="self-start text-sm bg-white/10 hover:bg-white/15 border border-white/20 text-white px-4 py-2 rounded-xl transition-colors"
+      >
+        {pending ? pending.name : "Escolher arquivo"}
+      </button>
+      <div className="flex gap-2">
+        <select value={fileType} onChange={(e) => setFileType(e.target.value as ReferenceFileType)} className={inputCls}>
+          <option value="image">Imagem</option>
+          <option value="pdf">PDF</option>
+          <option value="dxf">DXF</option>
+          <option value="ads">ADS (Audaces)</option>
+          <option value="amk">AMK (Audaces)</option>
+          <option value="adsx">ADSX (Audaces)</option>
+          <option value="amkx">AMKX (Audaces)</option>
+        </select>
+        <input value={notesText} onChange={(e) => setNotesText(e.target.value)} placeholder="Notas" className={inputCls + " flex-1"} />
+      </div>
+      <button type="submit" disabled={!pending} className={btnCls + " self-start"}>Enviar arquivo</button>
+    </form>
+  );
+}
+
+function FileList({ files, canEdit, onDelete, emptyMessage }: {
+  files: PatternReferenceFile[]; canEdit: boolean; onDelete: (id: string, url: string) => void; emptyMessage: string;
+}) {
+  return (
+    <div className="grid gap-2">
+      {files.map((f) => (
+        <div key={f.id} className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/5 border border-white/10">
+          <span className="text-sm">[{f.file_type}] {f.file_url.split("/").pop()} {f.notes && `— ${f.notes}`}</span>
+          {canEdit && <button onClick={() => onDelete(f.id, f.file_url)} className="text-red-400 hover:text-red-300 text-xs">Excluir</button>}
+        </div>
+      ))}
+      {files.length === 0 && <p className="text-slate-500 text-sm">{emptyMessage}</p>}
+    </div>
+  );
+}
+
+function FilesTab({ components, selectedComponentId, onSelectComponent, files, patternLevelFiles, canEdit, onUpload, onUploadPatternLevel, onDelete }: {
+  components: PatternComponent[]; selectedComponentId: string | null; onSelectComponent: (id: string) => void;
+  files: PatternReferenceFile[]; patternLevelFiles: PatternReferenceFile[]; canEdit: boolean;
+  onUpload: (file: File, type: ReferenceFileType, notes: string) => void;
+  onUploadPatternLevel: (file: File, type: ReferenceFileType, notes: string) => void;
+  onDelete: (id: string, url: string) => void;
+}) {
+  const [scope, setScope] = useState<"component" | "pattern">("component");
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex bg-white/10 rounded-xl p-1 max-w-md">
+        <button
+          onClick={() => setScope("component")}
+          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${scope === "component" ? "bg-purple-600 text-white" : "text-slate-400 hover:text-white"}`}
+        >
+          Arquivo de uma peça específica
+        </button>
+        <button
+          onClick={() => setScope("pattern")}
+          className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${scope === "pattern" ? "bg-purple-600 text-white" : "text-slate-400 hover:text-white"}`}
+        >
+          Arquivo do padrão completo
+        </button>
+      </div>
+
+      {scope === "component" ? (
+        <div>
+          <ComponentPicker components={components} selectedComponentId={selectedComponentId} onSelectComponent={onSelectComponent} />
+          {selectedComponentId && (
+            <>
+              <FileUploadForm canEdit={canEdit} onUpload={onUpload} />
+              <FileList files={files} canEdit={canEdit} onDelete={onDelete} emptyMessage="Nenhum arquivo enviado para esta peça." />
+            </>
           )}
-          <div className="grid gap-2">
-            {files.map((f) => (
-              <div key={f.id} className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/5 border border-white/10">
-                <span className="text-sm">[{f.file_type}] {f.file_url.split("/").pop()} {f.notes && `— ${f.notes}`}</span>
-                {canEdit && <button onClick={() => onDelete(f.id, f.file_url)} className="text-red-400 hover:text-red-300 text-xs">Excluir</button>}
-              </div>
-            ))}
-            {files.length === 0 && <p className="text-slate-500 text-sm">Nenhum arquivo enviado para esta peça.</p>}
-          </div>
-        </>
+        </div>
+      ) : (
+        <div>
+          <p className="text-xs text-slate-500 mb-4 max-w-md">
+            Use esta opção para um arquivo que representa o padrão inteiro (todas as peças juntas), tipo o desenho técnico completo — não fica preso a uma peça específica.
+          </p>
+          <FileUploadForm canEdit={canEdit} onUpload={onUploadPatternLevel} />
+          <FileList files={patternLevelFiles} canEdit={canEdit} onDelete={onDelete} emptyMessage="Nenhum arquivo do padrão completo enviado ainda." />
+        </div>
       )}
     </div>
   );

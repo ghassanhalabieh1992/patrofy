@@ -169,15 +169,32 @@ CREATE TABLE IF NOT EXISTS validation_rules (
   error_message    TEXT NOT NULL
 );
 
+-- pattern_component_id = arquivo de uma peça específica
+-- pattern_type_id      = arquivo do padrão completo (todas as peças) — ex: desenho geral
+-- Exatamente um dos dois deve estar preenchido (ver CHECK constraint abaixo)
 CREATE TABLE IF NOT EXISTS pattern_reference_files (
   id                    UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  pattern_component_id  UUID REFERENCES pattern_components(id) ON DELETE CASCADE NOT NULL,
+  pattern_component_id  UUID REFERENCES pattern_components(id) ON DELETE CASCADE,
+  pattern_type_id       UUID REFERENCES pattern_types(id) ON DELETE CASCADE,
   file_url              TEXT NOT NULL,
   file_type             TEXT NOT NULL CHECK (file_type IN ('image', 'pdf', 'dxf', 'ads', 'amk', 'adsx', 'amkx')),
   uploaded_by           UUID REFERENCES auth.users(id) NOT NULL,
   notes                 TEXT,
   created_at            TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migração para bancos já criados antes do suporte a arquivos do padrão completo
+ALTER TABLE pattern_reference_files ALTER COLUMN pattern_component_id DROP NOT NULL;
+ALTER TABLE pattern_reference_files ADD COLUMN IF NOT EXISTS pattern_type_id UUID REFERENCES pattern_types(id) ON DELETE CASCADE;
+
+ALTER TABLE pattern_reference_files DROP CONSTRAINT IF EXISTS pattern_reference_files_owner_check;
+ALTER TABLE pattern_reference_files ADD CONSTRAINT pattern_reference_files_owner_check
+  CHECK (
+    (pattern_component_id IS NOT NULL AND pattern_type_id IS NULL) OR
+    (pattern_component_id IS NULL AND pattern_type_id IS NOT NULL)
+  );
+
+CREATE INDEX IF NOT EXISTS pattern_reference_files_pt_idx ON pattern_reference_files (pattern_type_id);
 
 CREATE TABLE IF NOT EXISTS pattern_points (
   id                    UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -303,8 +320,14 @@ CREATE POLICY "gerencia_validacao" ON validation_rules
 DROP POLICY IF EXISTS "gerencia_arquivos_referencia" ON pattern_reference_files;
 CREATE POLICY "gerencia_arquivos_referencia" ON pattern_reference_files
   FOR ALL
-  USING (owns_pattern_component(pattern_component_id))
-  WITH CHECK (owns_pattern_component(pattern_component_id));
+  USING (
+    (pattern_component_id IS NOT NULL AND owns_pattern_component(pattern_component_id))
+    OR (pattern_type_id IS NOT NULL AND owns_pattern_type(pattern_type_id))
+  )
+  WITH CHECK (
+    (pattern_component_id IS NOT NULL AND owns_pattern_component(pattern_component_id))
+    OR (pattern_type_id IS NOT NULL AND owns_pattern_type(pattern_type_id))
+  );
 
 DROP POLICY IF EXISTS "gerencia_pontos" ON pattern_points;
 CREATE POLICY "gerencia_pontos" ON pattern_points

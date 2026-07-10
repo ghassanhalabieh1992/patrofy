@@ -88,7 +88,8 @@ export interface ValidationRule {
 
 export interface PatternReferenceFile {
   id: string
-  pattern_component_id: string
+  pattern_component_id: string | null
+  pattern_type_id: string | null
   file_url: string
   file_type: ReferenceFileType
   uploaded_by: string
