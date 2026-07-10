@@ -12,3 +12,12 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Native <select> dropdown lists ignore Tailwind text/bg classes on the
+   element itself — style <option> directly so the popup list stays
+   readable on the app's dark background instead of the browser's
+   default white. */
+select option {
+  background-color: #1e293b;
+  color: #ffffff;
+}
