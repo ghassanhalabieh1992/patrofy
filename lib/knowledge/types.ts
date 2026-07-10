@@ -24,6 +24,7 @@ export interface PatternType {
   id: string
   name: string
   category: string
+  description: string | null
   status: PatternStatus
   created_by: string
   reviewed_by: string | null

@@ -103,12 +103,16 @@ CREATE TABLE IF NOT EXISTS pattern_types (
   id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name        TEXT NOT NULL,
   category    TEXT NOT NULL,
+  description TEXT,
   status      TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'pending_review', 'approved', 'rejected')),
   created_by  UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   reviewed_by UUID REFERENCES auth.users(id),
   approved_at TIMESTAMPTZ,
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migração para bancos já criados antes deste campo existir (seguro rodar sempre)
+ALTER TABLE pattern_types ADD COLUMN IF NOT EXISTS description TEXT;
 
 CREATE TABLE IF NOT EXISTS pattern_components (
   id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,

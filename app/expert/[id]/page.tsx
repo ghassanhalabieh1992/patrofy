@@ -112,8 +112,8 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
   }, [selectedComponentId, loadComponentData]);
 
   // ── Actions ───────────────────────────────────────────────────────
-  async function updateBasicInfo(name: string, category: string) {
-    await supabase.from("pattern_types").update({ name, category }).eq("id", id);
+  async function updateBasicInfo(name: string, category: string, description: string) {
+    await supabase.from("pattern_types").update({ name, category, description }).eq("id", id);
     load();
   }
 
@@ -415,18 +415,29 @@ const btnCls = "bg-purple-600 hover:bg-purple-500 disabled:opacity-50 transition
 // ── Tabs ──────────────────────────────────────────────────────────
 
 function InfoTab({ pattern, canEdit, onSave, onDelete }: {
-  pattern: PatternType; canEdit: boolean; onSave: (name: string, category: string) => void; onDelete: () => void;
+  pattern: PatternType; canEdit: boolean; onSave: (name: string, category: string, description: string) => void; onDelete: () => void;
 }) {
   const [name, setName] = useState(pattern.name);
   const [category, setCategory] = useState(pattern.category);
+  const [description, setDescription] = useState(pattern.description ?? "");
   return (
     <div className="flex flex-col gap-8 max-w-md">
-      <form onSubmit={(e) => { e.preventDefault(); onSave(name, category); }} className="flex flex-col gap-4">
+      <form onSubmit={(e) => { e.preventDefault(); onSave(name, category, description); }} className="flex flex-col gap-4">
         <Field label="Nome do padrão">
           <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canEdit} className={inputCls} />
         </Field>
         <Field label="Categoria">
           <input value={category} onChange={(e) => setCategory(e.target.value)} disabled={!canEdit} className={inputCls} />
+        </Field>
+        <Field label="Descrição do modelo">
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={!canEdit}
+            rows={4}
+            placeholder="Detalhes do modelo: gola, mangas, pences, caimento, público-alvo..."
+            className={inputCls + " w-full resize-none"}
+          />
         </Field>
         {canEdit && <button type="submit" className={btnCls}>Salvar</button>}
       </form>
@@ -574,6 +585,24 @@ function FormulasTab({ components, selectedComponentId, onSelectComponent, formu
       <ComponentPicker components={components} selectedComponentId={selectedComponentId} onSelectComponent={onSelectComponent} />
       {selectedComponentId && (
         <>
+          <div className="text-xs text-slate-400 mb-4 max-w-lg bg-white/5 border border-white/10 rounded-xl p-3 space-y-2">
+            <p>
+              <strong className="text-slate-300">Nome</strong> é só um rótulo para identificar a fórmula — o sistema não entende nada sobre ela a partir do nome. <strong className="text-slate-300">Tipo</strong> é o que diz o que aquele número representa geometricamente:
+            </p>
+            <ul className="list-disc pr-4 space-y-0.5">
+              <li><span className="font-mono text-purple-300">point_x</span> — coordenada horizontal de um ponto</li>
+              <li><span className="font-mono text-purple-300">point_y</span> — coordenada vertical de um ponto</li>
+              <li><span className="font-mono text-purple-300">distance</span> — um comprimento isolado (ex: profundidade de um pence)</li>
+              <li><span className="font-mono text-purple-300">angle</span> — um ângulo em graus</li>
+            </ul>
+            <p>
+              Um ponto completo (com X e Y) precisa de <strong className="text-slate-300">duas linhas com o mesmo nome</strong>, uma de cada tipo:
+            </p>
+            <p className="font-mono bg-slate-900/60 rounded-lg p-2 leading-relaxed">
+              P1_cintura | point_x | cintura / 4 + 1<br/>
+              P1_cintura | point_y | altura_gancho
+            </p>
+          </div>
           {canEdit && (
             <form onSubmit={(e) => { e.preventDefault(); if (pointName && expression) { onAdd(pointName, expression, type); setPointName(""); setExpression(""); } }} className="flex flex-col gap-3 mb-4">
               <div className="flex gap-2">
@@ -584,10 +613,10 @@ function FormulasTab({ components, selectedComponentId, onSelectComponent, formu
                 </div>
                 <Field label="Tipo">
                   <select value={type} onChange={(e) => setType(e.target.value as ExpressionType)} className={inputCls}>
-                    <option value="point_x">point_x</option>
-                    <option value="point_y">point_y</option>
-                    <option value="distance">distance</option>
-                    <option value="angle">angle</option>
+                    <option value="point_x">point_x — Coordenada X (horizontal)</option>
+                    <option value="point_y">point_y — Coordenada Y (vertical)</option>
+                    <option value="distance">distance — Distância / comprimento</option>
+                    <option value="angle">angle — Ângulo (graus)</option>
                   </select>
                 </Field>
               </div>
@@ -758,23 +787,59 @@ function PointsTab({ components, selectedComponentId, onSelectComponent, points,
       <ComponentPicker components={components} selectedComponentId={selectedComponentId} onSelectComponent={onSelectComponent} />
       {selectedComponentId && (
         <>
+          <div className="text-xs text-slate-400 mb-4 max-w-lg bg-white/5 border border-white/10 rounded-xl p-3 space-y-1">
+            <p>
+              Marque aqui os pontos que você mediu manualmente (com régua) direto no desenho original — não são calculados por fórmula. Servem para conferir depois se a fórmula da aba &quot;Fórmulas&quot; bate com o desenho real.
+            </p>
+            <p>
+              <strong className="text-slate-300">Antes de começar:</strong> escolha um ponto fixo no desenho para ser a &quot;origem&quot; (0,0) — por exemplo o canto superior esquerdo da peça. Todas as distâncias X e Y abaixo são medidas a partir desse mesmo ponto de origem, sempre.
+            </p>
+          </div>
           {canEdit && (
             <form onSubmit={(e) => { e.preventDefault(); if (label && x && y) { onAdd(label, parseFloat(x), parseFloat(y)); setLabel(""); setX(""); setY(""); } }} className="flex gap-2 mb-4">
-              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="A" className={inputCls + " w-20"} />
-              <input value={x} onChange={(e) => setX(e.target.value)} type="number" step="0.1" placeholder="X (cm)" className={inputCls + " w-28"} />
-              <input value={y} onChange={(e) => setY(e.target.value)} type="number" step="0.1" placeholder="Y (cm)" className={inputCls + " w-28"} />
-              <button type="submit" className={btnCls}>Adicionar ponto</button>
+              <Field label="Letra do ponto no desenho (A, B, C...)">
+                <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="A" className={inputCls + " w-full"} />
+              </Field>
+              <Field label="Distância X a partir da origem — horizontal (cm)">
+                <input value={x} onChange={(e) => setX(e.target.value)} type="number" step="0.1" placeholder="0" className={inputCls + " w-full"} />
+              </Field>
+              <Field label="Distância Y a partir da origem — vertical (cm)">
+                <input value={y} onChange={(e) => setY(e.target.value)} type="number" step="0.1" placeholder="0" className={inputCls + " w-full"} />
+              </Field>
+              <div className="self-end">
+                <button type="submit" className={btnCls}>Adicionar ponto</button>
+              </div>
             </form>
           )}
-          <div className="grid grid-cols-3 gap-2">
-            {points.map((p) => (
-              <div key={p.id} className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/5 border border-white/10">
-                <span className="font-mono">{p.label}: ({p.x_cm}, {p.y_cm})</span>
-                {canEdit && <button onClick={() => onDelete(p.id)} className="text-red-400 hover:text-red-300 text-xs">Excluir</button>}
-              </div>
-            ))}
-            {points.length === 0 && <p className="text-slate-500 text-sm col-span-3">Nenhum ponto registrado para esta peça ainda.</p>}
-          </div>
+
+          {points.length === 0 ? (
+            <p className="text-slate-500 text-sm">Nenhum ponto registrado para esta peça ainda.</p>
+          ) : (
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-white/10 text-left text-xs text-slate-400">
+                  <th className="py-2 font-medium">Ponto</th>
+                  <th className="py-2 font-medium">X — horizontal (cm)</th>
+                  <th className="py-2 font-medium">Y — vertical (cm)</th>
+                  {canEdit && <th className="py-2"></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {points.map((p) => (
+                  <tr key={p.id} className="border-b border-white/5">
+                    <td className="py-2 font-mono text-purple-300">{p.label}</td>
+                    <td className="py-2 font-mono">{p.x_cm}</td>
+                    <td className="py-2 font-mono">{p.y_cm}</td>
+                    {canEdit && (
+                      <td className="py-2 text-right">
+                        <button onClick={() => onDelete(p.id)} className="text-red-400 hover:text-red-300 text-xs">Excluir</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </>
       )}
     </div>
