@@ -107,6 +107,14 @@ export interface PatternPoint {
   linked_formula_id: string | null
 }
 
+export interface PatternSizeValue {
+  id: string
+  pattern_type_id: string
+  size_label: string
+  measurement_id: string
+  value_cm: number
+}
+
 export interface ExpertNote {
   id: string
   entity_type: string

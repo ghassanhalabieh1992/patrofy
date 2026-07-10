@@ -206,6 +206,20 @@ CREATE TABLE IF NOT EXISTS pattern_points (
   linked_formula_id     UUID REFERENCES formulas(id) ON DELETE SET NULL
 );
 
+-- Tabela de referência de tamanhos (P/M/G/GG...) por padrão — documentação/
+-- conferência do especialista, não é usada pelo motor de geração (que calcula
+-- direto das medidas reais do cliente).
+CREATE TABLE IF NOT EXISTS pattern_size_values (
+  id               UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  pattern_type_id  UUID REFERENCES pattern_types(id) ON DELETE CASCADE NOT NULL,
+  size_label       TEXT NOT NULL,
+  measurement_id   UUID REFERENCES measurements(id) ON DELETE CASCADE NOT NULL,
+  value_cm         NUMERIC NOT NULL,
+  UNIQUE (pattern_type_id, size_label, measurement_id)
+);
+
+CREATE INDEX IF NOT EXISTS pattern_size_values_pt_idx ON pattern_size_values (pattern_type_id);
+
 CREATE TABLE IF NOT EXISTS expert_notes (
   id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   entity_type TEXT NOT NULL,
@@ -257,6 +271,7 @@ ALTER TABLE ease_rules                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE validation_rules          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pattern_reference_files   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pattern_points            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pattern_size_values       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expert_notes              ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "expert_gerencia_seus_patterns" ON pattern_types;
@@ -334,6 +349,12 @@ CREATE POLICY "gerencia_pontos" ON pattern_points
   FOR ALL
   USING (owns_pattern_component(pattern_component_id))
   WITH CHECK (owns_pattern_component(pattern_component_id));
+
+DROP POLICY IF EXISTS "gerencia_tabela_tamanhos" ON pattern_size_values;
+CREATE POLICY "gerencia_tabela_tamanhos" ON pattern_size_values
+  FOR ALL
+  USING (owns_pattern_type(pattern_type_id))
+  WITH CHECK (owns_pattern_type(pattern_type_id));
 
 DROP POLICY IF EXISTS "expert_gerencia_suas_notas" ON expert_notes;
 CREATE POLICY "expert_gerencia_suas_notas" ON expert_notes

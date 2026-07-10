@@ -7,16 +7,31 @@ import { createClient } from "@/lib/supabase/client";
 import type {
   PatternType, PatternComponent, Measurement, PatternTypeMeasurement,
   Formula, ConstructionRule, EaseRule, ValidationRule,
-  PatternReferenceFile, PatternPoint, ExpertNote, UserRole, ExpressionType, ReferenceFileType,
+  PatternReferenceFile, PatternPoint, PatternSizeValue, ExpertNote, UserRole, ExpressionType, ReferenceFileType,
 } from "@/lib/knowledge/types";
 import { STATUS_LABELS, STATUS_COLORS } from "@/lib/knowledge/types";
 
-type Tab = "info" | "components" | "measurements" | "formulas" | "rules" | "files" | "points" | "notes";
+// Supabase Storage rejects keys with non-ASCII characters (accents, Arabic, etc.)
+// — strip the original filename down to something storage-safe, keeping the extension.
+function safeFileName(name: string): string {
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot) : "";
+  const base = name
+    .slice(0, dot > 0 ? dot : name.length)
+    .normalize("NFKD")
+    .replace(/[^\w-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50);
+  return (base || "arquivo") + ext;
+}
+
+type Tab = "info" | "components" | "measurements" | "sizes" | "formulas" | "rules" | "files" | "points" | "notes";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "info", label: "Dados básicos" },
   { id: "components", label: "Peças" },
   { id: "measurements", label: "Medidas" },
+  { id: "sizes", label: "Tabela de Tamanhos" },
   { id: "formulas", label: "Fórmulas" },
   { id: "rules", label: "Regras" },
   { id: "files", label: "Arquivos de referência" },
@@ -40,6 +55,7 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
 
   const [measurementsDict, setMeasurementsDict] = useState<Measurement[]>([]);
   const [patternMeasurements, setPatternMeasurements] = useState<PatternTypeMeasurement[]>([]);
+  const [sizeValues, setSizeValues] = useState<PatternSizeValue[]>([]);
 
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [constructionRules, setConstructionRules] = useState<ConstructionRule[]>([]);
@@ -78,6 +94,9 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
 
     const { data: pm } = await supabase.from("pattern_type_measurements").select("*").eq("pattern_type_id", id);
     setPatternMeasurements((pm as PatternTypeMeasurement[]) ?? []);
+
+    const { data: sv } = await supabase.from("pattern_size_values").select("*").eq("pattern_type_id", id);
+    setSizeValues((sv as PatternSizeValue[]) ?? []);
 
     const { data: cr } = await supabase.from("construction_rules").select("*").eq("pattern_type_id", id);
     setConstructionRules((cr as ConstructionRule[]) ?? []);
@@ -189,6 +208,26 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
     setPatternMeasurements((pm as PatternTypeMeasurement[]) ?? []);
   }
 
+  async function setSizeValue(sizeLabel: string, measurementId: string, valueCm: number | null) {
+    if (valueCm === null) {
+      await supabase.from("pattern_size_values").delete()
+        .eq("pattern_type_id", id).eq("size_label", sizeLabel).eq("measurement_id", measurementId);
+    } else {
+      await supabase.from("pattern_size_values").upsert(
+        { pattern_type_id: id, size_label: sizeLabel, measurement_id: measurementId, value_cm: valueCm },
+        { onConflict: "pattern_type_id,size_label,measurement_id" }
+      );
+    }
+    const { data: sv } = await supabase.from("pattern_size_values").select("*").eq("pattern_type_id", id);
+    setSizeValues((sv as PatternSizeValue[]) ?? []);
+  }
+
+  async function removeSize(sizeLabel: string) {
+    await supabase.from("pattern_size_values").delete().eq("pattern_type_id", id).eq("size_label", sizeLabel);
+    const { data: sv } = await supabase.from("pattern_size_values").select("*").eq("pattern_type_id", id);
+    setSizeValues((sv as PatternSizeValue[]) ?? []);
+  }
+
   async function addFormula(point_name: string, expression: string, expression_type: ExpressionType) {
     if (!selectedComponentId) return;
     await supabase.from("formulas").insert({ pattern_component_id: selectedComponentId, point_name, expression, expression_type, order_index: formulas.length });
@@ -237,7 +276,7 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
 
   async function uploadReferenceFile(file: File, fileType: ReferenceFileType, notesText: string) {
     if (!selectedComponentId || !userId) return;
-    const path = `${userId}/${id}/${selectedComponentId}/${Date.now()}-${file.name}`;
+    const path = `${userId}/${id}/${selectedComponentId}/${Date.now()}-${safeFileName(file.name)}`;
     const { error: upErr } = await supabase.storage.from("pattern-references").upload(path, file);
     if (upErr) { setError(upErr.message); return; }
     await supabase.from("pattern_reference_files").insert({
@@ -248,7 +287,7 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
 
   async function uploadPatternLevelFile(file: File, fileType: ReferenceFileType, notesText: string) {
     if (!userId) return;
-    const path = `${userId}/${id}/_padrao-completo/${Date.now()}-${file.name}`;
+    const path = `${userId}/${id}/_padrao-completo/${Date.now()}-${safeFileName(file.name)}`;
     const { error: upErr } = await supabase.storage.from("pattern-references").upload(path, file);
     if (upErr) { setError(upErr.message); return; }
     await supabase.from("pattern_reference_files").insert({
@@ -359,6 +398,17 @@ export default function PatternEditorPage({ params }: { params: Promise<{ id: st
               canEdit={canEdit}
               onToggle={toggleMeasurement}
               onAddMeasurement={addMeasurement}
+            />
+          )}
+
+          {tab === "sizes" && (
+            <SizesTab
+              dict={measurementsDict}
+              assigned={patternMeasurements}
+              values={sizeValues}
+              canEdit={canEdit}
+              onSetValue={setSizeValue}
+              onRemoveSize={removeSize}
             />
           )}
 
@@ -582,6 +632,100 @@ function MeasurementsTab({ dict, assigned, canEdit, onToggle, onAddMeasurement }
             + Adicionar nova medida
           </button>
         )
+      )}
+    </div>
+  );
+}
+
+function SizesTab({ dict, assigned, values, canEdit, onSetValue, onRemoveSize }: {
+  dict: Measurement[]; assigned: PatternTypeMeasurement[]; values: PatternSizeValue[]; canEdit: boolean;
+  onSetValue: (sizeLabel: string, measurementId: string, valueCm: number | null) => void;
+  onRemoveSize: (sizeLabel: string) => void;
+}) {
+  const [newSize, setNewSize] = useState("");
+  const [pendingSizes, setPendingSizes] = useState<string[]>([]);
+
+  const activeMeasurements = dict.filter((m) => assigned.some((a) => a.measurement_id === m.id));
+  const sizes = Array.from(new Set([...values.map((v) => v.size_label), ...pendingSizes]));
+
+  if (activeMeasurements.length === 0) {
+    return <p className="text-slate-500 text-sm max-w-md">Marque pelo menos uma medida na aba &quot;Medidas&quot; antes de montar a tabela de tamanhos.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-slate-500 max-w-lg">
+        Tabela de referência (P, M, G, GG...) só para consulta e conferência sua — não afeta o que é gerado para o cliente, que sempre usa as medidas reais dele nas fórmulas.
+      </p>
+
+      {canEdit && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const label = newSize.trim().toUpperCase();
+            if (label && !sizes.includes(label)) setPendingSizes((prev) => [...prev, label]);
+            setNewSize("");
+          }}
+          className="flex gap-2"
+        >
+          <input value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder="GG" className={inputCls + " w-28"} />
+          <button type="submit" className={btnCls}>+ Tamanho</button>
+        </form>
+      )}
+
+      {sizes.length === 0 ? (
+        <p className="text-slate-500 text-sm">Nenhum tamanho adicionado ainda.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-white/10 text-left text-xs text-slate-400">
+                <th className="py-2 pr-4 font-medium">Medida</th>
+                {sizes.map((size) => (
+                  <th key={size} className="py-2 px-2 font-medium text-center">
+                    <div className="flex items-center gap-1 justify-center">
+                      {size}
+                      {canEdit && (
+                        <button
+                          onClick={() => { onRemoveSize(size); setPendingSizes((prev) => prev.filter((s) => s !== size)); }}
+                          className="text-red-400 hover:text-red-300"
+                          title="Remover tamanho"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {activeMeasurements.map((m) => (
+                <tr key={m.id} className="border-b border-white/5">
+                  <td className="py-2 pr-4 text-slate-300 whitespace-nowrap">{m.label_pt}</td>
+                  {sizes.map((size) => {
+                    const v = values.find((x) => x.size_label === size && x.measurement_id === m.id);
+                    return (
+                      <td key={size} className="py-1.5 px-2">
+                        <input
+                          type="number"
+                          step="0.1"
+                          defaultValue={v?.value_cm ?? ""}
+                          disabled={!canEdit}
+                          onBlur={(e) => {
+                            const raw = e.target.value.trim();
+                            onSetValue(size, m.id, raw === "" ? null : parseFloat(raw));
+                          }}
+                          className={inputCls + " w-20 text-center"}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

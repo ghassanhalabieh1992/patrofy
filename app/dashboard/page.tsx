@@ -15,8 +15,6 @@ import {
   generatePattern,
   detectGarment,
   REQUIRED_FIELDS,
-  OPTIONAL_FIELDS,
-  type GarmentType,
   type PatternData,
   type Measurements,
 } from "@/lib/patterns";
@@ -80,17 +78,9 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   imagePreview?: string;
-  medidas?: Medidas;
   isLoading?: boolean;
   pattern?: PatternData;        // parametric SVG pattern
   ficha?: FichaTecnicaData;     // structured AI JSON response
-}
-
-interface Medidas {
-  busto: string;
-  cintura: string;
-  quadril: string;
-  altura: string;
 }
 
 interface SavedMolde {
@@ -145,18 +135,11 @@ export default function DashboardPage() {
   const [historyLoading, setHistoryLoading] = useState(true);
 
   const [input, setInput] = useState("");
-  const [medidas, setMedidas] = useState<Medidas>({ busto: "", cintura: "", quadril: "", altura: "" });
-  const [showMedidas, setShowMedidas] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [imageBase64, setImageBase64] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-
-  // Parametric panel
-  const [showPatternPanel, setShowPatternPanel] = useState(false);
-  const [patternGarment, setPatternGarment] = useState<GarmentType>("saia");
-  const [patternMeasures, setPatternMeasures] = useState<Record<string, string>>({});
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const fileRef     = useRef<HTMLInputElement>(null);
@@ -250,7 +233,6 @@ export default function DashboardPage() {
     if (isLoading || (!input.trim() && !uploadedFile)) return;
 
     const userContent = input.trim() || `${t.analisarPrefix}${uploadedFile?.name}`;
-    const hasMedidas = Object.values(medidas).some((v) => v);
     const isImage = !!imageBase64;
 
     const userMsg: ChatMessage = {
@@ -258,7 +240,6 @@ export default function DashboardPage() {
       role: "user",
       content: userContent,
       imagePreview: imageBase64 || undefined,
-      medidas: hasMedidas ? { ...medidas } : undefined,
     };
     const loadingMsg: ChatMessage = { id: "loading", role: "assistant", content: "", isLoading: true };
 
@@ -266,7 +247,6 @@ export default function DashboardPage() {
     setInput("");
     setImageBase64("");
     setUploadedFile(null);
-    setShowMedidas(false);
     setIsLoading(true);
 
     // ── Fast path: if user provided garment + measurements directly, skip AI ──
@@ -327,7 +307,6 @@ export default function DashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           descricao:   userContent,
-          medidas:     hasMedidas ? medidas : undefined,
           imageBase64: isImage ? imageBase64 : undefined,
           historico,
         }),
@@ -350,7 +329,6 @@ export default function DashboardPage() {
                 content: fichaJSON
                   ? (fichaJSON.peca ? t.fichaTecnicaGeradaPara(fichaJSON.peca) : t.moldeGeradoComSucesso)
                   : rawResultado,
-                medidas:  hasMedidas ? { ...medidas } : undefined,
                 ficha:    fichaJSON ?? undefined,
                 pattern:  autoPattern ?? undefined,
               }
@@ -371,7 +349,7 @@ export default function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [input, uploadedFile, imageBase64, medidas, messages, isLoading, loadHistory, t]);
+  }, [input, uploadedFile, imageBase64, messages, isLoading, loadHistory, t]);
 
   // Download PDF for a text message
   const handleDownloadPDF = useCallback(async (msg: ChatMessage) => {
@@ -380,60 +358,11 @@ export default function DashboardPage() {
     const idx = messages.findIndex((m) => m.id === msg.id);
     const userMsg = idx > 0 ? messages[idx - 1] : undefined;
     await downloadMoldePDF(
-      { descricao: userMsg?.content ?? "Patrofy", resultado: msg.content, medidas: msg.medidas },
+      { descricao: userMsg?.content ?? "Patrofy", resultado: msg.content },
       `molde-patrofy-${Date.now()}.pdf`
     );
     setDownloadingId(null);
   }, [messages, downloadingId]);
-
-  // Generate parametric pattern → save to Supabase
-  const handleGeneratePattern = useCallback(async () => {
-    const required = REQUIRED_FIELDS[patternGarment];
-    if (required.some((f) => !patternMeasures[f])) return;
-
-    const p = (k: string) => parseFloat(patternMeasures[k] ?? "0") || undefined;
-    const measures: Measurements = {
-      cintura:     parseFloat(patternMeasures.cintura     ?? "0"),
-      quadril:     parseFloat(patternMeasures.quadril     ?? "0"),
-      comprimento: parseFloat(patternMeasures.comprimento ?? "0"),
-      busto:       p('busto'),
-      altura:      p('altura'),
-      mangas:      p('mangas'),
-      ombros:      p('ombros'),
-      pescoco:     p('pescoco'),
-      dorsoCostas: p('dorsoCostas'),
-      profCava:    p('profCava'),
-      punho:       p('punho'),
-      bracoCirc:   p('bracoCirc'),
-      entrepernas: p('entrepernas'),
-      coxa:        p('coxa'),
-      joelho:      p('joelho'),
-      tornozelo:   p('tornozelo'),
-    };
-
-    const pattern = generatePattern(patternGarment, measures);
-    const garmentLabel = t.garmentLabels[patternGarment];
-    const descricao = `${garmentLabel} — ${Object.entries(patternMeasures).filter(([,v]) => v).map(([k,v]) => `${k} ${v}cm`).join(", ")}`;
-
-    const userMsg: ChatMessage = { id: "pu-" + Date.now(), role: "user", content: descricao };
-    const assistantMsg: ChatMessage = {
-      id: "pa-" + Date.now(),
-      role: "assistant",
-      content: t.moldeParametricoGeradoManual(garmentLabel, pattern.sizeName, pattern.pieces.length),
-      pattern,
-    };
-
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
-    setShowPatternPanel(false);
-    setPatternMeasures({});
-
-    // Save to Supabase (no IA call — pattern_data is the output)
-    fetch("/api/moldes/gerar", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ descricao, pattern_data: pattern }),
-    }).then(() => loadHistory());
-  }, [patternGarment, patternMeasures, loadHistory, t]);
 
   // Logout
   const handleLogout = useCallback(async () => {
@@ -546,16 +475,6 @@ export default function DashboardPage() {
                     <img src={msg.imagePreview} alt={t.imagemEnviada} className="max-w-[220px] rounded-xl border border-white/10" />
                   )}
 
-                  {msg.medidas && Object.values(msg.medidas).some((v) => v) && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries(msg.medidas).filter(([,v]) => v).map(([k,v]) => (
-                        <span key={k} className="text-xs bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full">
-                          {t.fieldLabels[k] ?? k}: {v}cm
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
                   {msg.isLoading ? (
                     <div className="bg-slate-800 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
                       <span className="w-4 h-4 border-2 border-slate-600 border-t-purple-400 rounded-full animate-spin" />
@@ -612,104 +531,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Measurements panel */}
-        {showMedidas && (
-          <div className="border-t border-white/10 bg-slate-900 px-4 py-3">
-            <div className="max-w-3xl mx-auto">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium text-slate-300">{t.medidasCliente}</span>
-                <button onClick={() => setShowMedidas(false)} className="text-slate-500 hover:text-white text-lg">×</button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {(["busto", "cintura", "quadril", "altura"] as const).map((campo) => (
-                  <div key={campo} className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-500">{t.fieldLabels[campo] ?? campo}</label>
-                    <input
-                      type="number"
-                      placeholder="cm"
-                      value={medidas[campo]}
-                      onChange={(e) => setMedidas((prev) => ({ ...prev, [campo]: e.target.value }))}
-                      className="bg-slate-800 border border-white/15 rounded-xl px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-400 transition-colors"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Parametric pattern panel */}
-        {showPatternPanel && (
-          <div className="border-t border-white/10 bg-slate-900 px-4 py-4">
-            <div className="max-w-3xl mx-auto space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-white">{t.gerarMoldeParametricoTitulo}</span>
-                <button onClick={() => setShowPatternPanel(false)} className="text-slate-400 hover:text-white text-xl">×</button>
-              </div>
-
-              {/* Garment selector */}
-              <div className="flex flex-wrap gap-2">
-                {(["saia", "calca", "blusa", "blazer-fem", "blazer-masc"] as GarmentType[]).map((g) => (
-                  <button key={g} onClick={() => { setPatternGarment(g); setPatternMeasures({}); }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${patternGarment === g ? "bg-purple-600 text-white" : "bg-white/10 text-slate-300 hover:bg-white/15"}`}>
-                    {t.garmentLabels[g]}
-                  </button>
-                ))}
-              </div>
-
-              {/* Required fields */}
-              <div>
-                <p className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-2">{t.medidasObrigatorias}</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {REQUIRED_FIELDS[patternGarment].map((field) => (
-                    <div key={field} className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-400">{t.fieldLabels[field] ?? field} <span className="text-purple-400">*</span></label>
-                      <div className="relative">
-                        <input type="number" placeholder="0" value={patternMeasures[field] ?? ""}
-                          onChange={(e) => setPatternMeasures((prev) => ({ ...prev, [field]: e.target.value }))}
-                          className="w-full bg-slate-800 border border-white/15 rounded-xl px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-400 pr-9"/>
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">cm</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Optional fields */}
-              {OPTIONAL_FIELDS[patternGarment].length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">{t.medidasComplementares}</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {OPTIONAL_FIELDS[patternGarment].map((field) => (
-                      <div key={field} className="flex flex-col gap-1">
-                        <label className="text-xs text-slate-500">{t.fieldLabels[field] ?? field}</label>
-                        <div className="relative">
-                          <input type="number" placeholder="—" value={patternMeasures[field] ?? ""}
-                            onChange={(e) => setPatternMeasures((prev) => ({ ...prev, [field]: e.target.value }))}
-                            className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-slate-700 focus:outline-none focus:border-purple-400/50 pr-9"/>
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-600">cm</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(() => {
-                const missing = REQUIRED_FIELDS[patternGarment].filter((f) => !patternMeasures[f]);
-                return (
-                  <button onClick={handleGeneratePattern} disabled={missing.length > 0}
-                    className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
-                    {missing.length > 0
-                      ? t.preencher(missing.map((f) => t.fieldLabels[f] ?? f).join(", "))
-                      : t.gerarMolde(t.garmentLabels[patternGarment])}
-                  </button>
-                );
-              })()}
-            </div>
-          </div>
-        )}
-
         {/* File preview strip */}
         {uploadedFile && (
           <div className="border-t border-white/10 bg-slate-900 px-4 py-2">
@@ -733,15 +554,6 @@ export default function DashboardPage() {
           <div className="max-w-3xl mx-auto">
             <div className="flex items-end gap-2 bg-slate-800 border border-white/15 focus-within:border-purple-500/60 rounded-2xl px-3 py-2 transition-colors">
 
-              {/* Parametric pattern */}
-              <button onClick={() => setShowPatternPanel((v) => !v)}
-                className={`p-1.5 transition-colors flex-shrink-0 mb-0.5 ${showPatternPanel ? "text-purple-400" : "text-slate-400 hover:text-white"}`}
-                title={t.gerarMoldeParametricoTooltip}>
-                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
-                </svg>
-              </button>
-
               {/* Attach file */}
               <button onClick={() => fileRef.current?.click()}
                 className="p-1.5 text-slate-400 hover:text-white transition-colors flex-shrink-0 mb-0.5"
@@ -751,15 +563,6 @@ export default function DashboardPage() {
                 </svg>
               </button>
               <input ref={fileRef} type="file" accept="image/*,.pdf" onChange={handleFileChange} className="hidden" />
-
-              {/* Measurements */}
-              <button onClick={() => setShowMedidas((v) => !v)}
-                className={`p-1.5 transition-colors flex-shrink-0 mb-0.5 ${showMedidas ? "text-purple-400" : "text-slate-400 hover:text-white"}`}
-                title={t.adicionarMedidasTooltip}>
-                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path d="M3 7l3 3 4-4 4 4 4-4 3 3M3 17l3 3 4-4 4 4 4-4 3 3"/>
-                </svg>
-              </button>
 
               {/* Textarea */}
               <textarea
