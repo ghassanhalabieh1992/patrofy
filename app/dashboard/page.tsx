@@ -9,13 +9,13 @@ import { downloadMoldePDF } from "@/lib/pdf";
 import { extractJSON } from "@/lib/llama";
 import { PatternViewer } from "./PatternViewer";
 import { FichaTecnica, type FichaTecnicaData } from "./FichaTecnica";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import type { Dictionary } from "@/lib/i18n/dictionary";
 import {
   generatePattern,
   detectGarment,
-  GARMENT_LABELS,
   REQUIRED_FIELDS,
   OPTIONAL_FIELDS,
-  FIELD_LABELS,
   type GarmentType,
   type PatternData,
   type Measurements,
@@ -125,33 +125,22 @@ function RenderContent({ text }: { text: string }) {
 
 // ── Welcome message ───────────────────────────────────────────────────────────
 
-const WELCOME: ChatMessage = {
-  id: "welcome",
-  role: "assistant",
-  content: `Olá! Sou o **Patrofy AI**, seu assistente de modelagem de roupas.
-
-Descreva a peça que deseja em texto livre — com as medidas — e gerei o molde completo automaticamente. Exemplos:
-
-• **"Saia reta cintura 72 quadril 98 comprimento 65"**
-• **"Blusa básica busto 92 cintura 76 comprimento 58"**
-• **"Calça básica cintura 74 quadril 100 comprimento 100"**
-
-Também posso analisar imagens de peças e gerar o molde a partir delas.
-• **Exportar em PDF** em escala 1:1 para costura profissional
-
-Como posso começar?`,
-};
+function getWelcome(dict: Dictionary): ChatMessage {
+  return { id: "welcome", role: "assistant", content: dict.dashboard.welcomeMessage };
+}
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
+  const { dict } = useLanguage();
+  const t = dict.dashboard;
 
   // ── State ───────────────────────────────────────────────────────
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<UserRole>("user");
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [getWelcome(dict)]);
   const [savedMoldes, setSavedMoldes] = useState<SavedMolde[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
 
@@ -226,14 +215,14 @@ export default function DashboardPage() {
   }, []);
 
   const loadMolde = useCallback((molde: SavedMolde) => {
-    const msgs: ChatMessage[] = [WELCOME];
+    const msgs: ChatMessage[] = [getWelcome(dict)];
     msgs.push({ id: "u-" + molde.id, role: "user", content: molde.descricao });
 
     if (molde.pattern_data) {
       msgs.push({
         id: "a-" + molde.id,
         role: "assistant",
-        content: molde.resultado ?? "Molde paramétrico",
+        content: molde.resultado ?? t.moldeParametricoFallback,
         pattern: molde.pattern_data,
       });
     } else {
@@ -242,25 +231,25 @@ export default function DashboardPage() {
       msgs.push({
         id:      "a-" + molde.id,
         role:    "assistant",
-        content: fichaJSON ? (fichaJSON.peca ? `Ficha técnica: **${fichaJSON.peca}**` : "Molde gerado.") : (molde.resultado ?? ""),
+        content: fichaJSON ? (fichaJSON.peca ? t.fichaTecnicaSimples(fichaJSON.peca) : t.moldeGerado) : (molde.resultado ?? ""),
         ficha:   fichaJSON ?? undefined,
       });
     }
     setMessages(msgs);
-  }, []);
+  }, [dict, t]);
 
   const newChat = useCallback(() => {
-    setMessages([WELCOME]);
+    setMessages([getWelcome(dict)]);
     setInput("");
     setUploadedFile(null);
     setImageBase64("");
-  }, []);
+  }, [dict]);
 
   // Send message → call IA API
   const handleSend = useCallback(async () => {
     if (isLoading || (!input.trim() && !uploadedFile)) return;
 
-    const userContent = input.trim() || `Analisar: ${uploadedFile?.name}`;
+    const userContent = input.trim() || `${t.analisarPrefix}${uploadedFile?.name}`;
     const hasMedidas = Object.values(medidas).some((v) => v);
     const isImage = !!imageBase64;
 
@@ -306,11 +295,11 @@ export default function DashboardPage() {
         if (required.every(f => m[f])) {
           try {
             const pattern = generatePattern(directGarment, m);
-            const label = GARMENT_LABELS[directGarment];
+            const label = t.garmentLabels[directGarment];
             const assistantMsg: ChatMessage = {
               id:      "pa-" + Date.now(),
               role:    "assistant",
-              content: `Molde paramétrico gerado: **${label}** (${pattern.sizeName}).\n\nExporte em PDF, SVG ou DXF com o botão **Exportar**.`,
+              content: t.moldeParametricoGeradoFast(label, pattern.sizeName),
               pattern,
             };
             setMessages(prev => prev.map(m => m.id === "loading" ? assistantMsg : m));
@@ -345,7 +334,7 @@ export default function DashboardPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Erro ao gerar molde.");
+      if (!res.ok) throw new Error(data.error ?? t.erroAoGerar);
 
       const rawResultado: string = data.molde.resultado ?? "";
       const fichaJSON = extractJSON(rawResultado) as FichaTecnicaData | null;
@@ -359,7 +348,7 @@ export default function DashboardPage() {
                 id:      assistantId,
                 role:    "assistant",
                 content: fichaJSON
-                  ? (fichaJSON.peca ? `Ficha técnica gerada para **${fichaJSON.peca}**.` : "Molde gerado com sucesso.")
+                  ? (fichaJSON.peca ? t.fichaTecnicaGeradaPara(fichaJSON.peca) : t.moldeGeradoComSucesso)
                   : rawResultado,
                 medidas:  hasMedidas ? { ...medidas } : undefined,
                 ficha:    fichaJSON ?? undefined,
@@ -371,18 +360,18 @@ export default function DashboardPage() {
       // Refresh sidebar history
       loadHistory();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro desconhecido.";
+      const msg = err instanceof Error ? err.message : t.erroDesconhecido;
       setMessages((prev) =>
         prev.map((m) =>
           m.id === "loading"
-            ? { id: "err-" + Date.now(), role: "assistant", content: `Erro: ${msg}` }
+            ? { id: "err-" + Date.now(), role: "assistant", content: `${t.erroPrefix}${msg}` }
             : m
         )
       );
     } finally {
       setIsLoading(false);
     }
-  }, [input, uploadedFile, imageBase64, medidas, messages, isLoading, loadHistory]);
+  }, [input, uploadedFile, imageBase64, medidas, messages, isLoading, loadHistory, t]);
 
   // Download PDF for a text message
   const handleDownloadPDF = useCallback(async (msg: ChatMessage) => {
@@ -391,7 +380,7 @@ export default function DashboardPage() {
     const idx = messages.findIndex((m) => m.id === msg.id);
     const userMsg = idx > 0 ? messages[idx - 1] : undefined;
     await downloadMoldePDF(
-      { descricao: userMsg?.content ?? "Molde Patrofy", resultado: msg.content, medidas: msg.medidas },
+      { descricao: userMsg?.content ?? "Patrofy", resultado: msg.content, medidas: msg.medidas },
       `molde-patrofy-${Date.now()}.pdf`
     );
     setDownloadingId(null);
@@ -423,14 +412,14 @@ export default function DashboardPage() {
     };
 
     const pattern = generatePattern(patternGarment, measures);
-    const garmentLabel = GARMENT_LABELS[patternGarment];
+    const garmentLabel = t.garmentLabels[patternGarment];
     const descricao = `${garmentLabel} — ${Object.entries(patternMeasures).filter(([,v]) => v).map(([k,v]) => `${k} ${v}cm`).join(", ")}`;
 
     const userMsg: ChatMessage = { id: "pu-" + Date.now(), role: "user", content: descricao };
     const assistantMsg: ChatMessage = {
       id: "pa-" + Date.now(),
       role: "assistant",
-      content: `Molde paramétrico gerado para **${garmentLabel}** (${pattern.sizeName}).\n\n${pattern.pieces.length} peças calculadas. Visualize abaixo e clique **"Imprimir A4"** para baixar em escala real.`,
+      content: t.moldeParametricoGeradoManual(garmentLabel, pattern.sizeName, pattern.pieces.length),
       pattern,
     };
 
@@ -444,7 +433,7 @@ export default function DashboardPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ descricao, pattern_data: pattern }),
     }).then(() => loadHistory());
-  }, [patternGarment, patternMeasures, loadHistory]);
+  }, [patternGarment, patternMeasures, loadHistory, t]);
 
   // Logout
   const handleLogout = useCallback(async () => {
@@ -468,19 +457,19 @@ export default function DashboardPage() {
             onClick={newChat}
             className="w-full flex items-center gap-2 text-sm bg-purple-600 hover:bg-purple-500 transition-colors px-3 py-2 rounded-xl font-medium"
           >
-            <span className="text-lg leading-none">+</span> Nova conversa
+            <span className="text-lg leading-none">+</span> {t.novaConversa}
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 px-2 mb-2">Meus Moldes</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 px-2 mb-2">{t.meusMoldes}</p>
           {historyLoading ? (
             <div className="flex items-center gap-2 px-2 text-xs text-slate-500 py-4">
               <span className="w-3 h-3 border border-slate-600 border-t-purple-400 rounded-full animate-spin" />
-              Carregando...
+              {dict.common.carregando}
             </div>
           ) : savedMoldes.length === 0 ? (
-            <p className="text-xs text-slate-600 px-2 py-4">Nenhum molde salvo ainda.</p>
+            <p className="text-xs text-slate-600 px-2 py-4">{t.nenhumMolde}</p>
           ) : (
             savedMoldes.map((m) => (
               <button
@@ -505,16 +494,16 @@ export default function DashboardPage() {
           {userEmail && <p className="text-xs text-slate-500 truncate mb-2">{userEmail}</p>}
           {(userRole === "expert" || userRole === "admin") && (
             <Link href="/expert" className="block text-sm text-purple-400 hover:text-purple-300 transition-colors mb-2">
-              Portal do Especialista
+              {t.portalEspecialista}
             </Link>
           )}
           {userRole === "admin" && (
             <Link href="/admin" className="block text-sm text-purple-400 hover:text-purple-300 transition-colors mb-2">
-              Painel Admin
+              {t.painelAdmin}
             </Link>
           )}
           <button onClick={handleLogout} className="text-sm text-slate-500 hover:text-slate-300 transition-colors">
-            Sair da conta
+            {dict.common.sairDaConta}
           </button>
         </div>
       </aside>
@@ -532,7 +521,7 @@ export default function DashboardPage() {
               <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
           </button>
-          <span className="font-semibold text-sm text-slate-200">Assistente de Modelagem</span>
+          <span className="font-semibold text-sm text-slate-200">{t.assistente}</span>
           <span className="ml-auto hidden sm:flex items-center gap-1.5 text-xs text-purple-300 bg-purple-500/10 border border-purple-500/20 px-3 py-1 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
             LLaMA 3 via OpenRouter
@@ -554,14 +543,14 @@ export default function DashboardPage() {
                 <div className={`flex flex-col gap-2 max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
 
                   {msg.imagePreview && (
-                    <img src={msg.imagePreview} alt="Imagem enviada" className="max-w-[220px] rounded-xl border border-white/10" />
+                    <img src={msg.imagePreview} alt={t.imagemEnviada} className="max-w-[220px] rounded-xl border border-white/10" />
                   )}
 
                   {msg.medidas && Object.values(msg.medidas).some((v) => v) && (
                     <div className="flex flex-wrap gap-1.5">
                       {Object.entries(msg.medidas).filter(([,v]) => v).map(([k,v]) => (
                         <span key={k} className="text-xs bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full">
-                          {k}: {v}cm
+                          {t.fieldLabels[k] ?? k}: {v}cm
                         </span>
                       ))}
                     </div>
@@ -570,7 +559,7 @@ export default function DashboardPage() {
                   {msg.isLoading ? (
                     <div className="bg-slate-800 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
                       <span className="w-4 h-4 border-2 border-slate-600 border-t-purple-400 rounded-full animate-spin" />
-                      <span className="text-sm text-slate-400">Gerando molde com IA…</span>
+                      <span className="text-sm text-slate-400">{t.gerandoMolde}</span>
                     </div>
                   ) : (
                     <div className={`rounded-2xl px-4 py-3 ${
@@ -603,7 +592,7 @@ export default function DashboardPage() {
                             <path d="M12 15V3m0 12l-4-4m4 4l4-4M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17"/>
                           </svg>
                         )}
-                        Baixar PDF
+                        {t.baixarPDF}
                       </button>
                       <button
                         onClick={() => navigator.clipboard.writeText(msg.content)}
@@ -612,7 +601,7 @@ export default function DashboardPage() {
                         <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                           <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
                         </svg>
-                        Copiar
+                        {t.copiar}
                       </button>
                     </div>
                   )}
@@ -628,13 +617,13 @@ export default function DashboardPage() {
           <div className="border-t border-white/10 bg-slate-900 px-4 py-3">
             <div className="max-w-3xl mx-auto">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium text-slate-300">Medidas do cliente (cm)</span>
+                <span className="text-sm font-medium text-slate-300">{t.medidasCliente}</span>
                 <button onClick={() => setShowMedidas(false)} className="text-slate-500 hover:text-white text-lg">×</button>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {(["busto", "cintura", "quadril", "altura"] as const).map((campo) => (
                   <div key={campo} className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-500 capitalize">{campo}</label>
+                    <label className="text-xs text-slate-500">{t.fieldLabels[campo] ?? campo}</label>
                     <input
                       type="number"
                       placeholder="cm"
@@ -654,7 +643,7 @@ export default function DashboardPage() {
           <div className="border-t border-white/10 bg-slate-900 px-4 py-4">
             <div className="max-w-3xl mx-auto space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-white">Gerar Molde Paramétrico</span>
+                <span className="text-sm font-semibold text-white">{t.gerarMoldeParametricoTitulo}</span>
                 <button onClick={() => setShowPatternPanel(false)} className="text-slate-400 hover:text-white text-xl">×</button>
               </div>
 
@@ -663,18 +652,18 @@ export default function DashboardPage() {
                 {(["saia", "calca", "blusa", "blazer-fem", "blazer-masc"] as GarmentType[]).map((g) => (
                   <button key={g} onClick={() => { setPatternGarment(g); setPatternMeasures({}); }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${patternGarment === g ? "bg-purple-600 text-white" : "bg-white/10 text-slate-300 hover:bg-white/15"}`}>
-                    {GARMENT_LABELS[g]}
+                    {t.garmentLabels[g]}
                   </button>
                 ))}
               </div>
 
               {/* Required fields */}
               <div>
-                <p className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-2">Medidas obrigatórias</p>
+                <p className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-2">{t.medidasObrigatorias}</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {REQUIRED_FIELDS[patternGarment].map((field) => (
                     <div key={field} className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-400">{FIELD_LABELS[field] ?? field} <span className="text-purple-400">*</span></label>
+                      <label className="text-xs text-slate-400">{t.fieldLabels[field] ?? field} <span className="text-purple-400">*</span></label>
                       <div className="relative">
                         <input type="number" placeholder="0" value={patternMeasures[field] ?? ""}
                           onChange={(e) => setPatternMeasures((prev) => ({ ...prev, [field]: e.target.value }))}
@@ -689,11 +678,11 @@ export default function DashboardPage() {
               {/* Optional fields */}
               {OPTIONAL_FIELDS[patternGarment].length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Medidas complementares (opcional)</p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">{t.medidasComplementares}</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {OPTIONAL_FIELDS[patternGarment].map((field) => (
                       <div key={field} className="flex flex-col gap-1">
-                        <label className="text-xs text-slate-500">{FIELD_LABELS[field] ?? field}</label>
+                        <label className="text-xs text-slate-500">{t.fieldLabels[field] ?? field}</label>
                         <div className="relative">
                           <input type="number" placeholder="—" value={patternMeasures[field] ?? ""}
                             onChange={(e) => setPatternMeasures((prev) => ({ ...prev, [field]: e.target.value }))}
@@ -712,8 +701,8 @@ export default function DashboardPage() {
                   <button onClick={handleGeneratePattern} disabled={missing.length > 0}
                     className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
                     {missing.length > 0
-                      ? `Preencher: ${missing.map((f) => FIELD_LABELS[f] ?? f).join(", ")}`
-                      : `Gerar Molde — ${GARMENT_LABELS[patternGarment]}`}
+                      ? t.preencher(missing.map((f) => t.fieldLabels[f] ?? f).join(", "))
+                      : t.gerarMolde(t.garmentLabels[patternGarment])}
                   </button>
                 );
               })()}
@@ -732,7 +721,7 @@ export default function DashboardPage() {
               )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-slate-200 truncate">{uploadedFile.name}</p>
-                <p className="text-xs text-slate-500">{imageBase64 ? "Imagem de referência" : "Arquivo de referência"}</p>
+                <p className="text-xs text-slate-500">{imageBase64 ? t.imagemReferencia : t.arquivoReferencia}</p>
               </div>
               <button onClick={() => { setUploadedFile(null); setImageBase64(""); }} className="text-slate-500 hover:text-white text-xl">×</button>
             </div>
@@ -747,7 +736,7 @@ export default function DashboardPage() {
               {/* Parametric pattern */}
               <button onClick={() => setShowPatternPanel((v) => !v)}
                 className={`p-1.5 transition-colors flex-shrink-0 mb-0.5 ${showPatternPanel ? "text-purple-400" : "text-slate-400 hover:text-white"}`}
-                title="Gerar molde paramétrico (formas reais para corte)">
+                title={t.gerarMoldeParametricoTooltip}>
                 <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
                 </svg>
@@ -756,7 +745,7 @@ export default function DashboardPage() {
               {/* Attach file */}
               <button onClick={() => fileRef.current?.click()}
                 className="p-1.5 text-slate-400 hover:text-white transition-colors flex-shrink-0 mb-0.5"
-                title="Anexar imagem">
+                title={t.anexarImagemTooltip}>
                 <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
                 </svg>
@@ -766,7 +755,7 @@ export default function DashboardPage() {
               {/* Measurements */}
               <button onClick={() => setShowMedidas((v) => !v)}
                 className={`p-1.5 transition-colors flex-shrink-0 mb-0.5 ${showMedidas ? "text-purple-400" : "text-slate-400 hover:text-white"}`}
-                title="Adicionar medidas">
+                title={t.adicionarMedidasTooltip}>
                 <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path d="M3 7l3 3 4-4 4 4 4-4 3 3M3 17l3 3 4-4 4 4 4-4 3 3"/>
                 </svg>
@@ -777,7 +766,7 @@ export default function DashboardPage() {
                 ref={textareaRef} value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                placeholder={uploadedFile ? "Descreva o que deseja fazer com este arquivo…" : "Descreva a peça: tipo, tamanho, tecido, estilo…"}
+                placeholder={uploadedFile ? t.inputPlaceholderFile : t.inputPlaceholderDefault}
                 rows={1}
                 className="flex-1 bg-transparent text-white text-sm placeholder:text-slate-500 resize-none focus:outline-none max-h-40 py-1.5"
               />
@@ -792,7 +781,7 @@ export default function DashboardPage() {
             </div>
 
             <p className="text-center text-xs text-slate-600 mt-2">
-              Enter para enviar · 🔷 molde paramétrico · 📎 imagem · 📏 medidas
+              {t.footerHint}
             </p>
           </div>
         </div>

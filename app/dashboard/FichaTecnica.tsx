@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { downloadMoldePDF } from "@/lib/pdf";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
 // ── Types that mirror the JSON schema returned by Patrofy AI ─────────────────
 
@@ -57,6 +58,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; descricao?: string }) {
+  const { dict } = useLanguage();
+  const ft = dict.fichaTecnica;
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = useCallback(async () => {
@@ -65,44 +68,44 @@ export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; desc
       // Build a human-readable text version of the ficha for the PDF
       const linhas: string[] = [];
 
-      linhas.push(`FICHA TÉCNICA — ${data.peca ?? "Molde"}`);
-      linhas.push(`Tamanho base: ${data.tamanho_base ?? "M"}   |   Tecido: ${data.tecido_recomendado ?? "—"}   |   Margem: ${data.margem_costura ?? "1,5 cm"}`);
-      if (data.rendimento_tecido_metros) linhas.push(`Rendimento de tecido: ${data.rendimento_tecido_metros} m`);
+      linhas.push(ft.pdfLines.fichaTecnica(data.peca ?? ft.moldeFallback));
+      linhas.push(ft.pdfLines.tamanhoLinha(data.tamanho_base ?? "M", data.tecido_recomendado ?? "—", data.margem_costura ?? "1,5 cm"));
+      if (data.rendimento_tecido_metros) linhas.push(ft.pdfLines.rendimento(data.rendimento_tecido_metros));
       linhas.push("");
 
       if (data.partes?.length) {
-        linhas.push("PARTES DO MOLDE:");
+        linhas.push(ft.pdfLines.partesDoMolde);
         data.partes.forEach((p, i) => {
-          linhas.push(`${i + 1}. ${p.nome} — Qty: ${p.quantidade}  |  Fio: ${p.fio_tecido ?? "reto"}  |  ${p.medidas?.largura_cm ?? 0}cm × ${p.medidas?.comprimento_cm ?? 0}cm`);
+          linhas.push(ft.pdfLines.parteItem(i + 1, p.nome, p.quantidade, p.fio_tecido ?? "reto", p.medidas?.largura_cm ?? 0, p.medidas?.comprimento_cm ?? 0));
           if (p.instrucoes) linhas.push(`   ${p.instrucoes}`);
         });
         linhas.push("");
       }
 
       if (data.montagem?.length) {
-        linhas.push("SEQUÊNCIA DE MONTAGEM:");
+        linhas.push(ft.pdfLines.sequenciaMontagem);
         data.montagem.forEach((s) => linhas.push(`• ${s}`));
         linhas.push("");
       }
 
       if (data.observacoes_tecnicas) {
-        linhas.push("OBSERVAÇÕES TÉCNICAS:");
+        linhas.push(ft.pdfLines.observacoesTecnicas);
         linhas.push(data.observacoes_tecnicas);
       }
 
       if (data.alteracoes_aplicadas?.length) {
-        linhas.push("\nALTERAÇÕES APLICADAS:");
+        linhas.push(ft.pdfLines.alteracoesAplicadas);
         data.alteracoes_aplicadas.forEach((a) => linhas.push(`• ${a}`));
       }
 
       await downloadMoldePDF(
-        { descricao: descricao ?? data.peca ?? "Molde", resultado: linhas.join("\n") },
+        { descricao: descricao ?? data.peca ?? ft.moldeFallback, resultado: linhas.join("\n") },
         `ficha-${(data.peca ?? "molde").toLowerCase().replace(/\s+/g, "-")}.pdf`
       );
     } finally {
       setDownloading(false);
     }
-  }, [data, descricao]);
+  }, [data, descricao, ft]);
 
   const hasMedidasTabela = data.medidas_tabela && Object.keys(data.medidas_tabela).length > 0;
 
@@ -114,15 +117,15 @@ export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; desc
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-bold uppercase tracking-widest text-indigo-300">
-              Ficha Técnica — Patrofy AI
+              {ft.headerTitle}
             </span>
             {data.modo && (
               <span className="text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full capitalize">
-                Modo {data.modo}
+                {ft.modo} {data.modo}
               </span>
             )}
           </div>
-          <h3 className="text-lg font-bold text-white">{data.peca ?? "Molde"}</h3>
+          <h3 className="text-lg font-bold text-white">{data.peca ?? ft.moldeFallback}</h3>
         </div>
 
         <button
@@ -137,7 +140,7 @@ export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; desc
               <path d="M12 15V3m0 12l-4-4m4 4l4-4M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17"/>
             </svg>
           )}
-          PDF
+          {ft.pdf}
         </button>
       </div>
 
@@ -145,25 +148,25 @@ export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; desc
 
         {/* Summary badges */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-800/60 rounded-xl p-4">
-          <Badge label="Tamanho base" value={data.tamanho_base ?? "—"} />
-          <Badge label="Margem costura" value={data.margem_costura ?? "1,5 cm"} />
+          <Badge label={ft.tamanhoBase} value={data.tamanho_base ?? "—"} />
+          <Badge label={ft.margemCostura} value={data.margem_costura ?? "1,5 cm"} />
           {data.rendimento_tecido_metros ? (
-            <Badge label="Rendimento tecido" value={`${data.rendimento_tecido_metros} m`} />
+            <Badge label={ft.rendimentoTecido} value={`${data.rendimento_tecido_metros} m`} />
           ) : null}
           <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
-            <span className="text-xs text-slate-400">Tecido recomendado</span>
+            <span className="text-xs text-slate-400">{ft.tecidoRecomendado}</span>
             <span className="text-sm font-semibold text-white leading-snug">{data.tecido_recomendado ?? "—"}</span>
           </div>
         </div>
 
         {/* Measurements table */}
         {hasMedidasTabela && (
-          <Section title="Tabela de Medidas (cm)">
+          <Section title={ft.tabelaMedidas}>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/10">
-                    <th className="text-left py-2 text-xs text-slate-400 font-medium">Tamanho</th>
+                    <th className="text-left py-2 text-xs text-slate-400 font-medium">{ft.tamanho}</th>
                     {Object.keys(Object.values(data.medidas_tabela!)[0] ?? {}).map((k) => (
                       <th key={k} className="text-center py-2 text-xs text-slate-400 font-medium capitalize">{k}</th>
                     ))}
@@ -186,7 +189,7 @@ export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; desc
 
         {/* Pattern parts */}
         {data.partes && data.partes.length > 0 && (
-          <Section title={`Partes do Molde (${data.partes.length})`}>
+          <Section title={ft.partesDoMolde(data.partes.length)}>
             <div className="space-y-2">
               {data.partes.map((parte, i) => (
                 <div key={i} className="bg-slate-800/60 rounded-xl p-3">
@@ -203,7 +206,7 @@ export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; desc
                       )}
                       {parte.fio_tecido && (
                         <span className="text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full">
-                          fio {parte.fio_tecido}
+                          {ft.fio} {parte.fio_tecido}
                         </span>
                       )}
                     </div>
@@ -224,7 +227,7 @@ export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; desc
 
         {/* Assembly steps */}
         {data.montagem && data.montagem.length > 0 && (
-          <Section title="Sequência de Montagem">
+          <Section title={ft.sequenciaMontagem}>
             <ol className="space-y-1.5">
               {data.montagem.map((passo, i) => (
                 <li key={i} className="flex gap-3 text-sm text-slate-300">
@@ -240,7 +243,7 @@ export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; desc
 
         {/* Applied changes */}
         {data.alteracoes_aplicadas && data.alteracoes_aplicadas.length > 0 && (
-          <Section title="Alterações Aplicadas">
+          <Section title={ft.alteracoesAplicadas}>
             <ul className="space-y-1">
               {data.alteracoes_aplicadas.map((alt, i) => (
                 <li key={i} className="flex gap-2 text-sm text-slate-300">
@@ -254,7 +257,7 @@ export function FichaTecnica({ data, descricao }: { data: FichaTecnicaData; desc
 
         {/* Technical notes */}
         {data.observacoes_tecnicas && (
-          <Section title="Observações Técnicas">
+          <Section title={ft.observacoesTecnicas}>
             <p className="text-sm text-slate-300 leading-relaxed bg-slate-800/60 rounded-xl p-3">
               {data.observacoes_tecnicas}
             </p>

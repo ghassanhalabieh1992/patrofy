@@ -3,6 +3,8 @@
 import { useState, useCallback } from "react";
 import { pathToSVG } from "@/lib/patterns";
 import type { PatternData, PatternPiece } from "@/lib/patterns";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import type { Dictionary } from "@/lib/i18n/dictionary";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const PX_PER_CM  = 6    // screen preview scale
@@ -13,7 +15,7 @@ const A4_H_CM    = A4_H_MM / 10
 const OVERLAP_CM = 1    // page overlap for taping
 
 // ── SVG for a single pattern piece ───────────────────────────────────────────
-function PieceSVG({ piece, scale = PX_PER_CM }: { piece: PatternPiece; scale?: number }) {
+function PieceSVG({ piece, scale = PX_PER_CM, dict }: { piece: PatternPiece; scale?: number; dict: Dictionary }) {
   const pad   = 4 * scale
   const bbox  = piece.bbox
   const vw    = (bbox.w + 2) * scale + pad * 2
@@ -135,7 +137,7 @@ function PieceSVG({ piece, scale = PX_PER_CM }: { piece: PatternPiece; scale?: n
               {/* Arrow heads */}
               <polyline points={`${g1.x * scale - 3},${g1.y * scale + 5} ${g1.x * scale},${g1.y * scale} ${g1.x * scale + 3},${g1.y * scale + 5}`} fill="none" />
               <polyline points={`${g2.x * scale - 3},${g2.y * scale - 5} ${g2.x * scale},${g2.y * scale} ${g2.x * scale + 3},${g2.y * scale - 5}`} fill="none" />
-              <text x={mx} y={my - 4} fontSize={scale * 0.65} fill="#6b7280" textAnchor="middle">fio</text>
+              <text x={mx} y={my - 4} fontSize={scale * 0.65} fill="#6b7280" textAnchor="middle">{dict.patternViewer.fio}</text>
             </g>
           )
         })()}
@@ -163,7 +165,7 @@ function PieceSVG({ piece, scale = PX_PER_CM }: { piece: PatternPiece; scale?: n
             textAnchor="middle"
             transform={`rotate(-90, ${-scale * 0.3}, ${(bbox.h / 2) * scale})`}
           >
-            DOBRAR AQUI
+            {dict.patternViewer.dobrarAqui}
           </text>
         )}
       </g>
@@ -172,7 +174,7 @@ function PieceSVG({ piece, scale = PX_PER_CM }: { piece: PatternPiece; scale?: n
 }
 
 // ── A4 Tiled PDF Export ───────────────────────────────────────────────────────
-async function printPatternPDF(pattern: PatternData) {
+async function printPatternPDF(pattern: PatternData, dict: Dictionary) {
   const { default: jsPDF } = await import("jspdf");
 
   let doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -306,9 +308,9 @@ async function printPatternPDF(pattern: PatternData) {
         // ── Header info ─────────────────────────────────────────
         doc.setFontSize(8); doc.setTextColor(80);
         doc.text(`Patrofy.ai — ${pattern.garment} ${pattern.sizeName}`, ML + 2, MT - 2);
-        doc.text(`Peça: ${piece.name} | ${piece.cutInfo}`, ML + 2, MT + 4);
-        doc.text(`Página ${col + 1}/${cols} × ${row + 1}/${rows}`, PW - ML - 30, MT - 2);
-        doc.text(`Margem de costura: ${pattern.seamAllowance}cm (linha pontilhada = cortar, linha sólida = costurar)`, ML + 2, PH - MT - 3);
+        doc.text(`${dict.patternViewer.peca}: ${piece.name} | ${piece.cutInfo}`, ML + 2, MT + 4);
+        doc.text(`${dict.patternViewer.pagina} ${col + 1}/${cols} × ${row + 1}/${rows}`, PW - ML - 30, MT - 2);
+        doc.text(dict.patternViewer.margemCosturaLinha(pattern.seamAllowance), ML + 2, PH - MT - 3);
       }
     }
   }
@@ -400,14 +402,16 @@ function downloadPatternDXF(pattern: PatternData) {
 
 // ── Main PatternViewer Component ──────────────────────────────────────────────
 export function PatternViewer({ pattern }: { pattern: PatternData }) {
+  const { dict } = useLanguage();
+  const pv = dict.patternViewer;
   const [selectedPiece, setSelectedPiece] = useState<string>(pattern.pieces[0]?.id ?? '');
   const [printing, setPrinting] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
   const handlePrint = useCallback(async () => {
     setPrinting(true);
-    try { await printPatternPDF(pattern); } finally { setPrinting(false); }
-  }, [pattern]);
+    try { await printPatternPDF(pattern, dict); } finally { setPrinting(false); }
+  }, [pattern, dict]);
 
   const currentPiece = pattern.pieces.find(p => p.id === selectedPiece) ?? pattern.pieces[0];
 
@@ -424,7 +428,7 @@ export function PatternViewer({ pattern }: { pattern: PatternData }) {
       <div className="flex items-center justify-between px-4 py-3 bg-indigo-900 text-white">
         <div>
           <p className="font-semibold text-sm">{pattern.garment}</p>
-          <p className="text-xs text-indigo-300">{pattern.sizeName} — margem de costura: {pattern.seamAllowance}cm · bainha: {pattern.hemAllowance}cm</p>
+          <p className="text-xs text-indigo-300">{pattern.sizeName} — {pv.seamAllowanceLabel}: {pattern.seamAllowance}cm · {pv.hemLabel}: {pattern.hemAllowance}cm</p>
         </div>
         <div className="flex items-center gap-2 relative">
           {/* PDF button */}
@@ -434,7 +438,7 @@ export function PatternViewer({ pattern }: { pattern: PatternData }) {
             className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white text-xs font-medium px-3 py-2 rounded-xl transition-colors"
           >
             {printing ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : '↓'}
-            PDF ({totalPages}p)
+            {pv.pdfButton(totalPages)}
           </button>
           {/* Export dropdown */}
           <div className="relative">
@@ -442,24 +446,24 @@ export function PatternViewer({ pattern }: { pattern: PatternData }) {
               onClick={() => setShowExport(v => !v)}
               className="flex items-center gap-1.5 bg-white text-indigo-900 hover:bg-indigo-50 text-xs font-semibold px-3 py-2 rounded-xl transition-colors"
             >
-              Exportar ▾
+              {pv.exportar}
             </button>
             {showExport && (
               <div className="absolute right-0 top-10 bg-white rounded-xl shadow-xl border border-slate-200 w-48 z-50 overflow-hidden">
                 <button onClick={() => { downloadPatternSVG(pattern); setShowExport(false); }}
                   className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3">
                   <span className="text-lg">🎨</span>
-                  <div><p className="font-medium">SVG</p><p className="text-xs text-slate-400">Illustrator / Inkscape</p></div>
+                  <div><p className="font-medium">SVG</p><p className="text-xs text-slate-400">{pv.svgDesc}</p></div>
                 </button>
                 <button onClick={() => { downloadPatternDXF(pattern); setShowExport(false); }}
                   className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-100">
                   <span className="text-lg">✂️</span>
-                  <div><p className="font-medium">DXF</p><p className="text-xs text-slate-400">Máquinas de corte / CAD</p></div>
+                  <div><p className="font-medium">DXF</p><p className="text-xs text-slate-400">{pv.dxfDesc}</p></div>
                 </button>
                 <button onClick={() => { handlePrint(); setShowExport(false); }}
                   className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-t border-slate-100">
                   <span className="text-lg">🖨️</span>
-                  <div><p className="font-medium">PDF A4</p><p className="text-xs text-slate-400">Imprimir e cortar</p></div>
+                  <div><p className="font-medium">PDF A4</p><p className="text-xs text-slate-400">{pv.pdfA4Desc}</p></div>
                 </button>
               </div>
             )}
@@ -497,34 +501,34 @@ export function PatternViewer({ pattern }: { pattern: PatternData }) {
                 {currentPiece.bbox.w.toFixed(1)} × {currentPiece.bbox.h.toFixed(1)} cm
               </span>
               {currentPiece.onFold && (
-                <span className="text-blue-600 font-medium">dobrar na linha azul</span>
+                <span className="text-blue-600 font-medium">{pv.foldOnBlueLine}</span>
               )}
             </div>
             {/* Legend */}
             <div className="flex items-center gap-3 text-xs text-slate-500">
               <span className="flex items-center gap-1">
                 <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke="#dc2626" strokeWidth="1.5" strokeDasharray="4,2"/></svg>
-                cortar
+                {pv.legendCortar}
               </span>
               <span className="flex items-center gap-1">
                 <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke="#1e3a5f" strokeWidth="1"/></svg>
-                costurar
+                {pv.legendCosturar}
               </span>
               <span className="flex items-center gap-1">
                 <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke="#3b82f6" strokeWidth="1" strokeDasharray="6,2,2,2"/></svg>
-                dobrar
+                {pv.legendDobrar}
               </span>
             </div>
           </div>
 
           {/* Scrollable SVG area */}
           <div className="overflow-auto border border-slate-200 rounded-xl bg-slate-50" style={{ maxHeight: '50vh' }}>
-            <PieceSVG piece={currentPiece} scale={PX_PER_CM} />
+            <PieceSVG piece={currentPiece} scale={PX_PER_CM} dict={dict} />
           </div>
 
           {/* Scale note */}
           <p className="text-xs text-slate-400 mt-2 text-center">
-            Visualização em escala 1:1.67 — O PDF será impresso em escala real (1:1) para corte
+            {pv.scaleNote}
           </p>
         </div>
       )}
@@ -532,13 +536,13 @@ export function PatternViewer({ pattern }: { pattern: PatternData }) {
       {/* Measurements summary */}
       <div className="px-4 pb-4">
         <div className="bg-slate-50 rounded-xl p-3">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Medidas utilizadas</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">{pv.medidasUtilizadas}</p>
           <div className="flex flex-wrap gap-3">
             {Object.entries(pattern.measurements)
               .filter(([, v]) => v)
               .map(([k, v]) => (
                 <div key={k} className="text-xs">
-                  <span className="text-slate-400 capitalize">{k}:</span>{' '}
+                  <span className="text-slate-400">{dict.dashboard.fieldLabels[k] ?? k}:</span>{' '}
                   <span className="font-semibold text-slate-700">{v} cm</span>
                 </div>
               ))}

@@ -1,15 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
 type Modo = "login" | "cadastro";
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
-  const [modo, setModo] = useState<Modo>("login");
+  const searchParams = useSearchParams();
+  const { dict } = useLanguage();
+  const t = dict.login;
+  const [modo, setModo] = useState<Modo>(searchParams.get("modo") === "cadastro" ? "cadastro" : "login");
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -46,11 +58,11 @@ export default function LoginPage() {
           router.refresh();
         } else {
           // Confirmação de email ativada — aguardando o usuário confirmar
-          setMsg("Conta criada! Verifique seu email para confirmar o cadastro.");
+          setMsg(t.contaCriada);
         }
       }
     } catch {
-      setErro("Erro de rede. Tente novamente.");
+      setErro(t.erroRede);
     } finally {
       setCarregando(false);
     }
@@ -64,7 +76,7 @@ export default function LoginPage() {
           <Link href="/" className="text-3xl font-bold text-white tracking-tight">
             Patrofy<span className="text-purple-400">.</span>
           </Link>
-          <p className="text-slate-400 mt-2 text-sm">Sistema de IA para Geração de Moldes</p>
+          <p className="text-slate-400 mt-2 text-sm">{t.tagline}</p>
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-8 backdrop-blur-sm">
@@ -78,7 +90,7 @@ export default function LoginPage() {
                   modo === m ? "bg-purple-600 text-white shadow" : "text-slate-400 hover:text-white"
                 }`}
               >
-                {m === "login" ? "Entrar" : "Cadastrar"}
+                {m === "login" ? dict.common.entrar : dict.common.cadastrar}
               </button>
             ))}
           </div>
@@ -86,12 +98,12 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {modo === "cadastro" && (
               <div className="flex flex-col gap-1">
-                <label className="text-sm text-slate-300">Nome</label>
+                <label className="text-sm text-slate-300">{t.nome}</label>
                 <input
                   type="text"
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
-                  placeholder="Seu nome completo"
+                  placeholder={t.nomePlaceholder}
                   required
                   className="bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-400 transition-colors"
                 />
@@ -99,7 +111,7 @@ export default function LoginPage() {
             )}
 
             <div className="flex flex-col gap-1">
-              <label className="text-sm text-slate-300">Email</label>
+              <label className="text-sm text-slate-300">{t.email}</label>
               <input
                 type="email"
                 value={email}
@@ -111,7 +123,7 @@ export default function LoginPage() {
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-sm text-slate-300">Senha</label>
+              <label className="text-sm text-slate-300">{t.senha}</label>
               <input
                 type="password"
                 value={senha}
@@ -140,13 +152,13 @@ export default function LoginPage() {
               disabled={carregando}
               className="mt-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors text-white font-semibold py-3 rounded-xl"
             >
-              {carregando ? "Aguarde..." : modo === "login" ? "Entrar" : "Criar conta"}
+              {carregando ? t.aguarde : modo === "login" ? dict.common.entrar : t.criarConta}
             </button>
           </form>
         </div>
 
         <p className="text-center text-xs text-slate-600 mt-6">
-          Ao continuar, você concorda com os termos de uso da Patrofy.
+          {t.termos}
         </p>
       </div>
     </main>

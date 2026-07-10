@@ -30,33 +30,41 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isGated = pathname.startsWith("/dashboard") || pathname.startsWith("/expert") || pathname.startsWith("/admin");
 
+  let response: NextResponse;
+
   if (!user && isGated) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
+    response = NextResponse.redirect(new URL("/login", request.url));
+  } else if (user && pathname === "/login") {
+    response = NextResponse.redirect(new URL("/dashboard", request.url));
+  } else {
+    response = supabaseResponse;
 
-  if (user && pathname === "/login") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
+    if (user && (pathname.startsWith("/expert") || pathname.startsWith("/admin"))) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+      const role = profile?.role ?? "user";
 
-  if (user && (pathname.startsWith("/expert") || pathname.startsWith("/admin"))) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    const role = profile?.role ?? "user";
-
-    if (pathname.startsWith("/admin") && role !== "admin") {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      if (pathname.startsWith("/admin") && role !== "admin") {
+        response = NextResponse.redirect(new URL("/dashboard", request.url));
+      } else if (pathname.startsWith("/expert") && role !== "expert" && role !== "admin") {
+        response = NextResponse.redirect(new URL("/dashboard", request.url));
+      }
     }
-    if (pathname.startsWith("/expert") && role !== "expert" && role !== "admin") {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
   }
 
-  return supabaseResponse;
+  // Auto-detect language by country on first visit (only if not chosen yet)
+  if (!request.cookies.get("NEXT_LOCALE")) {
+    const country = request.headers.get("x-vercel-ip-country");
+    const locale = country && country !== "BR" ? "en" : "pt";
+    response.cookies.set("NEXT_LOCALE", locale, { path: "/", maxAge: 31536000 });
+  }
+
+  return response;
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/expert/:path*", "/admin/:path*"],
+  matcher: ["/", "/dashboard/:path*", "/login", "/expert/:path*", "/admin/:path*"],
 };
