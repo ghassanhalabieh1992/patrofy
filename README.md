@@ -2,8 +2,7 @@
 
 **Moldes de costura profissionais gerados por inteligência artificial em segundos.**
 
-<!-- Se o domínio patrofy.ai já estiver no ar publicamente, descomente a linha abaixo -->
-<!-- 🔗 **[patrofy.ai](https://patrofy.ai)** — aplicação em produção -->
+🔗 **[patrofy.ai](https://patrofy.ai)** — aplicação em produção
 
 ![Patrofy](./public/screenshot.png)
 
