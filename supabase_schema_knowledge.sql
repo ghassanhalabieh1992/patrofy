@@ -49,9 +49,22 @@ RETURNS BOOLEAN AS $$
   SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('expert', 'admin'));
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
+-- Configuração interna (e-mail do admin principal etc). RLS habilitado e SEM
+-- nenhuma policy: isso bloqueia qualquer acesso via anon/authenticated (API do
+-- Supabase), sobrando só o dono da tabela — por isso funções SECURITY DEFINER
+-- abaixo (que rodam como o dono) conseguem ler, mas o cliente nunca consegue.
+-- Supabase não permite ALTER DATABASE ... SET no SQL Editor (sem superuser),
+-- então usamos uma tabela normal em vez de uma configuração do Postgres.
+CREATE TABLE IF NOT EXISTS app_config (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;
+
 -- Única forma permitida de alterar o papel de um usuário (usada pela tela /admin/users)
 -- Qualquer admin pode conceder/revogar "expert", mas somente o admin principal
--- (email fixo abaixo) pode conceder o papel de "admin".
+-- (e-mail guardado em app_config, não no código-fonte — repo é público) pode
+-- conceder o papel de "admin".
 CREATE OR REPLACE FUNCTION set_user_role(target_user_id UUID, new_role TEXT)
 RETURNS VOID AS $$
 DECLARE
@@ -65,9 +78,7 @@ BEGIN
   END IF;
   IF new_role = 'admin' THEN
     SELECT email INTO caller_email FROM auth.users WHERE id = auth.uid();
-    -- O e-mail do admin principal NÃO fica no código (repo é público) — é lido de uma
-    -- configuração definida uma única vez direto no banco. Ver instruções no final deste arquivo.
-    IF caller_email IS DISTINCT FROM current_setting('app.primary_admin_email', true) THEN
+    IF caller_email IS DISTINCT FROM (SELECT value FROM app_config WHERE key = 'primary_admin_email') THEN
       RAISE EXCEPTION 'Apenas o administrador principal pode conceder o papel de admin';
     END IF;
   END IF;
@@ -455,9 +466,11 @@ ON CONFLICT (code) DO NOTHING;
 -- já que este repositório é público.
 -- =============================================
 
--- 6a) Define o e-mail do admin principal como configuração do banco (persiste
---     entre conexões; é o que set_user_role() consulta para autorizar novos admins)
--- ALTER DATABASE postgres SET app.primary_admin_email = 'SEU_EMAIL_AQUI';
+-- 6a) Define o e-mail do admin principal em app_config (é o que set_user_role()
+--     consulta para autorizar novos admins) — RLS sem policies já bloqueia
+--     leitura via API, então isso não fica exposto ao cliente
+-- INSERT INTO app_config (key, value) VALUES ('primary_admin_email', 'SEU_EMAIL_AQUI')
+-- ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 -- 6b) Promove esse usuário a admin pela primeira vez
 -- UPDATE profiles SET role = 'admin'
