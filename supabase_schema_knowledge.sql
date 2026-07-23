@@ -427,9 +427,12 @@ DROP POLICY IF EXISTS "expert_envia_arquivos_referencia" ON storage.objects;
 CREATE POLICY "expert_envia_arquivos_referencia" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'pattern-references' AND is_expert_or_admin());
 
+-- Cada arquivo só pode ser lido pelo próprio dono ou por um admin — não por
+-- qualquer expert (antes bastava ter papel expert/admin, hoje é dono OU admin,
+-- igual à policy de exclusão logo abaixo).
 DROP POLICY IF EXISTS "expert_le_arquivos_referencia" ON storage.objects;
 CREATE POLICY "expert_le_arquivos_referencia" ON storage.objects
-  FOR SELECT USING (bucket_id = 'pattern-references' AND is_expert_or_admin());
+  FOR SELECT USING (bucket_id = 'pattern-references' AND (is_admin() OR owner = auth.uid()));
 
 DROP POLICY IF EXISTS "expert_apaga_seus_arquivos_referencia" ON storage.objects;
 CREATE POLICY "expert_apaga_seus_arquivos_referencia" ON storage.objects
