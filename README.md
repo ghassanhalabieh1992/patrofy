@@ -63,8 +63,6 @@ A IA nunca desenha a geometria diretamente — ela interpreta a intenção do us
 
 ## Desafio técnico
 
-> ⚠️ **Ajuste esta seção para descrever exatamente o que você fez.** É a parte mais lida por recrutadores técnicos — o texto abaixo é um ponto de partida, não uma descrição verificada.
-
 O principal desafio não foi gerar texto, mas **garantir saída estruturada e tecnicamente válida** a partir de um modelo de linguagem, sem deixar a geometria do molde nas mãos do modelo.
 
 Um molde de costura não admite ambiguidade: cada medida precisa existir, estar em centímetros e ser coerente com as demais. Um modelo generativo, por padrão, devolve prosa — e mesmo instruído a responder em JSON, ocasionalmente inclui texto explicativo, quebra a estrutura ou inventa campos.
@@ -123,9 +121,3 @@ A aplicação ficará disponível em `http://localhost:3000`.
 Projeto nascido da união entre mais de uma década de vivência no setor têxtil e de confecção e a formação em IA.
 
 [LinkedIn](https://www.linkedin.com/in/ghassan-halabieh-328b14385) · [GitHub](https://github.com/ghassanhalabieh1992)
-
----
-
-## Licença
-
-<!-- Nenhum arquivo LICENSE encontrado no repositório ainda — adicione um (ex: MIT) antes de declarar a licença aqui -->
