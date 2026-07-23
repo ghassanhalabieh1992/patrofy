@@ -6,7 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 import type { ProfileWithEmail, UserRole } from "@/lib/knowledge/types";
 
 const ROLE_LABELS: Record<UserRole, string> = { user: "Usuário", expert: "Especialista", admin: "Admin" };
-const SUPER_ADMIN_EMAIL = "ghassanhalabieh@gmail.com";
+// Apenas para exibir/ocultar o botão na UI — a checagem real acontece no banco (set_user_role).
+// Valor vem de env var (não commitado) porque este repositório é público.
+const SUPER_ADMIN_EMAIL = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL ?? "";
 
 export default function AdminUsersPage() {
   const supabase = createClient();

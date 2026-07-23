@@ -65,7 +65,9 @@ BEGIN
   END IF;
   IF new_role = 'admin' THEN
     SELECT email INTO caller_email FROM auth.users WHERE id = auth.uid();
-    IF caller_email IS DISTINCT FROM 'ghassanhalabieh@gmail.com' THEN
+    -- O e-mail do admin principal NÃO fica no código (repo é público) — é lido de uma
+    -- configuração definida uma única vez direto no banco. Ver instruções no final deste arquivo.
+    IF caller_email IS DISTINCT FROM current_setting('app.primary_admin_email', true) THEN
       RAISE EXCEPTION 'Apenas o administrador principal pode conceder o papel de admin';
     END IF;
   END IF;
@@ -448,8 +450,15 @@ ON CONFLICT (code) DO NOTHING;
 
 -- =============================================
 -- 6) BOOTSTRAP DO PRIMEIRO ADMIN (rodar manualmente uma única vez)
--- Troque o email abaixo pelo seu e remova o comentário para executar.
+-- Rode isto direto no SQL Editor do Supabase com o seu e-mail real — NUNCA
+-- substitua o placeholder e faça commit deste arquivo com o e-mail real nele,
+-- já que este repositório é público.
 -- =============================================
 
+-- 6a) Define o e-mail do admin principal como configuração do banco (persiste
+--     entre conexões; é o que set_user_role() consulta para autorizar novos admins)
+-- ALTER DATABASE postgres SET app.primary_admin_email = 'SEU_EMAIL_AQUI';
+
+-- 6b) Promove esse usuário a admin pela primeira vez
 -- UPDATE profiles SET role = 'admin'
--- WHERE id = (SELECT id FROM auth.users WHERE email = 'ghassanhalabieh@gmail.com');
+-- WHERE id = (SELECT id FROM auth.users WHERE email = 'SEU_EMAIL_AQUI');
